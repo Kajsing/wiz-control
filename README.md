@@ -15,7 +15,7 @@
   - [Using the Application](#using-the-application)
 - [Configuration](#configuration)
   - [Data File](#data-file)
-- [Dependencies](#dependencies)
+- [Architecture Notes](#architecture-notes)
 - [Contributing](#contributing)
 - [License](#license)
 - [Contact](#contact)
@@ -38,12 +38,13 @@ WiZ Smart Bulb Manager is a Python-based graphical user interface (GUI) applicat
 
 ### Prerequisites
 
-- **Python 3.6 or newer**: Ensure Python is installed on your system. You can download it from [python.org](https://www.python.org/downloads/).
+- **Python 3.10+** with Tkinter support. Most desktop Python installers ship with Tkinter, but some Linux distributions split it into a separate package (see below).
+- **Broadcast access** on your local network. The discovery protocol uses UDP broadcasts on port `38899`.
 
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/wiz-smart-bulb-manager.git
+git clone https://github.com/Kajsing/wiz-control.git
 cd wiz-smart-bulb-manager
 ```
 
@@ -52,7 +53,7 @@ cd wiz-smart-bulb-manager
 Creating a virtual environment helps manage dependencies and keep your project isolated.
 
 ```bash
-python -m venv venv
+python3 -m venv .venv
 ```
 
 Activate the virtual environment:
@@ -60,44 +61,24 @@ Activate the virtual environment:
 - **On Windows:**
 
   ```bash
-  venv\Scripts\activate
+  .venv\Scripts\activate
   ```
 
 - **On macOS and Linux:**
 
   ```bash
-  source venv/bin/activate
+  source .venv/bin/activate
   ```
 
 ### Install Dependencies
 
-Install the required Python packages using `pip`:
+This project currently relies only on the Python standard library. If you maintain shared tooling for linting or testing, pin it in `requirements-dev.txt`.
 
-```bash
-pip install -r requirements.txt
-```
+**Tkinter note:** If `tkinter` is missing when you launch the app, install the platform package:
 
-If you don't have a `requirements.txt` file, you can create one with the following content:
-
-```txt
-# requirements.txt
-```
-
-**Note:** `tkinter` is usually included with Python on most systems. If it's not installed, follow the instructions below:
-
-- **On Debian/Ubuntu:**
-
-  ```bash
-  sudo apt-get install python3-tk
-  ```
-
-- **On macOS:**
-
-  `tkinter` is included in the standard Python installation.
-
-- **On Windows:**
-
-  `tkinter` is included in the standard Python installation.
+- **Debian/Ubuntu:** `sudo apt-get install python3-tk`
+- **Fedora:** `sudo dnf install python3-tkinter`
+- **Windows/macOS:** bundled with the official Python installers.
 
 ## Usage
 
@@ -106,64 +87,50 @@ If you don't have a `requirements.txt` file, you can create one with the followi
 To start the WiZ Smart Bulb Manager, navigate to the project directory and run:
 
 ```bash
-python wiz_gui.py
+python3 wiz_gui.py
 ```
 
 ### Using the Application
 
-1. **Discover Devices**: Click the "Discover Devices" button to scan your local network for WiZ smart bulbs.
-2. **View Devices**: Discovered devices will be listed, organized by rooms.
+1. **Discover Devices**: Click **Discover Devices** to broadcast a `getSystemConfig` request and catalog reachable bulbs.
+2. **View Devices**: The control panel groups devices by reported room ID and shows the last known power state.
 3. **Control Devices**:
-   - **Individual Control**: Use the "Turn On" and "Turn Off" buttons next to each device to control them individually.
-   - **Room Control**: Use the "Turn All On" and "Turn All Off" buttons in the room header to control all devices within that room simultaneously.
-4. **Manage Rooms**:
-   - **Rename Room**: Click the "Rename Room" button to assign a custom name to a room.
-5. **Remove Devices**: Click the "Remove" button next to a device to remove it from the manager.
-6. **Monitor Logs**: The log section displays real-time actions and device statuses.
+   - **Individual Control**: Use **Turn On/Turn Off** next to each entry to toggle that bulb.
+   - **Room Control**: Use **Turn All On/Turn All Off** in the room header to broadcast a state change to every bulb in the group.
+4. **Manage Rooms**: Use **Rename Room** to assign a friendly name that is cached locally.
+5. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
+6. **Monitor Logs**: The log area records discovery updates, command responses, and connectivity changes for quick troubleshooting.
 
 ## Configuration
 
 ### Data File
 
-The application uses a `wiz_data.json` file to store persistent data such as room names and device information. This file is automatically created and managed by the application.
+The application writes a `wiz_data.json` file alongside the scripts to remember room labels, device metadata, and the raw discovery payloads (`info`). A typical structure looks like:
 
-- **Location**: The `wiz_data.json` file is located in the same directory as the Python scripts.
-- **Structure**:
-
-  ```json
-  {
-      "rooms": {
-          "1": "Living Room",
-          "2": "Bedroom"
-      },
-      "devices": {
-          "192.168.87.10": {
-              "ip": "192.168.87.10",
-              "moduleName": "Bulb A",
-              "info": { ... }
-          },
-          "192.168.87.11": {
-              "ip": "192.168.87.11",
-              "moduleName": "Bulb B",
-              "info": { ... }
-          }
-      }
+```json
+{
+  "rooms": {
+    "1": "Living Room",
+    "2": "Bedroom"
+  },
+  "devices": {
+    "192.168.87.10": {
+      "ip": "192.168.87.10",
+      "moduleName": "Ceiling Lamp",
+      "roomId": "1",
+      "info": { "result": { "moduleName": "Ceiling Lamp", "roomId": 1, "state": true } }
+    }
   }
-  ```
+}
+```
 
-## Dependencies
+You can safely delete this file to reset the cache—the application will regenerate it on the next launch.
 
-The application primarily uses Python's standard libraries:
+## Architecture Notes
 
-- `tkinter`: For the graphical user interface.
-- `socket`: For network communication.
-- `json`: For handling JSON data.
-- `threading`: For managing background tasks.
-- `logging`: For logging actions and errors.
-
-### Optional Dependencies
-
-- **Logging**: Enhanced logging for better debugging and monitoring.
+- **GUI (`wiz_gui.py`)** manages Tkinter widgets, cached discovery data, and background polling threads. Device state changes update an in-memory cache before triggering lightweight UI refreshes.
+- **Discovery (`wiz_discovery.py`)** encapsulates UDP broadcast discovery, per-device command calls, and room grouping helpers. Network access is deliberately serialized in the status poller to avoid saturating the WiZ protocol.
+- **Contributor Guide**: See [`AGENTS.md`](AGENTS.md) for coding standards, testing guidance, and pull-request expectations tailored to this project.
 
 ## Contributing
 
@@ -191,7 +158,7 @@ Contributions are welcome! To contribute to WiZ Smart Bulb Manager:
 
 5. **Open a Pull Request**
 
-Please ensure your code follows the existing style and includes appropriate documentation.
+Please ensure your code follows the existing style and includes appropriate documentation. Consult [`AGENTS.md`](AGENTS.md) for detailed contributor guidelines.
 
 ## License
 
@@ -200,4 +167,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ## Contact
 
 For questions or support, open an issue on the GitHub repository or contact [your email](mailto:ckajsing@gmail.com).
-
