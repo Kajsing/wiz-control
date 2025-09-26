@@ -1,0 +1,144 @@
+{
+    "rooms": {
+        "4107709": "Stue",
+        "3336141": "Sove v\u00e6relse",
+        "8686565": "Gang"
+    },
+    "devices": {
+        "192.168.87.194": {
+            "ip": "192.168.87.194",
+            "moduleName": "ESP14_SHDW1_01",
+            "roomId": "8686565",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "a8bb506e3976",
+                    "homeId": 2214154,
+                    "roomId": 8686565,
+                    "rgn": "eu",
+                    "moduleName": "ESP14_SHDW1_01",
+                    "fwVersion": "1.34.1",
+                    "groupId": 0,
+                    "ping": 0
+                }
+            },
+            "preferences": {}
+        },
+        "192.168.87.179": {
+            "ip": "192.168.87.179",
+            "moduleName": "ESP24_SHRGBC_01",
+            "roomId": "3336141",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "d8a0113d6f6e",
+                    "homeId": 2214154,
+                    "roomId": 3336141,
+                    "rgn": "eu",
+                    "moduleName": "ESP24_SHRGBC_01",
+                    "fwVersion": "1.33.0",
+                    "groupId": 0,
+                    "ping": 0,
+                    "accUdpPropRate": 100
+                }
+            },
+            "preferences": {}
+        },
+        "192.168.87.108": {
+            "ip": "192.168.87.108",
+            "moduleName": "ESP14_SHDW1_01",
+            "roomId": "8686565",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "a8bb506e37e6",
+                    "homeId": 2214154,
+                    "roomId": 8686565,
+                    "rgn": "eu",
+                    "moduleName": "ESP14_SHDW1_01",
+                    "fwVersion": "1.34.1",
+                    "groupId": 0,
+                    "ping": 0
+                }
+            },
+            "preferences": {}
+        },
+        "192.168.87.131": {
+            "ip": "192.168.87.131",
+            "moduleName": "ESP14_SHDW1_01",
+            "roomId": "8686565",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "a8bb506e36fc",
+                    "homeId": 2214154,
+                    "roomId": 8686565,
+                    "rgn": "eu",
+                    "moduleName": "ESP14_SHDW1_01",
+                    "fwVersion": "1.34.1",
+                    "groupId": 0,
+                    "ping": 0
+                }
+            },
+            "preferences": {}
+        },
+        "192.168.87.120": {
+            "ip": "192.168.87.120",
+            "moduleName": "ESP03_SHRGB3_01ABI",
+            "roomId": "4107709",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "a8bb5078395e",
+                    "homeId": 2214154,
+                    "roomId": 4107709,
+                    "rgn": "eu",
+                    "moduleName": "ESP03_SHRGB3_01ABI",
+                    "fwVersion": "1.35.0",
+                    "groupId": 0,
+                    "ping": 0
+                }
+            },
+            "preferences": {
+                "dimming": 80,
+                "temperature": 2700,
+                "r": 0,
+                "g": 120,
+                "b": 255
+            }
+        },
+        "192.168.87.144": {
+            "ip": "192.168.87.144",
+            "moduleName": "ESP14_SHRGB1C_01",
+            "roomId": "3336141",
+            "info": {
+                "method": "getSystemConfig",
+                "env": "pro",
+                "result": {
+                    "mac": "a8bb506bc416",
+                    "homeId": 2214154,
+                    "roomId": 3336141,
+                    "rgn": "eu",
+                    "moduleName": "ESP14_SHRGB1C_01",
+                    "fwVersion": "1.33.0",
+                    "groupId": 0,
+                    "ping": 0
+                }
+            },
+            "preferences": {}
+        }
+    },
+    "room_settings": {
+        "3336141": {},
+        "4107709": {
+            "sceneId": 29,
+            "sceneSpeed": 100
+        },
+        "8686565": {}
+    }
+}
