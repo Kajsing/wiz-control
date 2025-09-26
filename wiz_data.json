@@ -38,7 +38,7 @@
                     "roomId": 3336141,
                     "rgn": "eu",
                     "moduleName": "ESP24_SHRGBC_01",
-                    "fwVersion": "1.33.0",
+                    "fwVersion": "1.35.0",
                     "groupId": 0,
                     "ping": 0,
                     "accUdpPropRate": 100
@@ -125,7 +125,7 @@
                     "roomId": 3336141,
                     "rgn": "eu",
                     "moduleName": "ESP14_SHRGB1C_01",
-                    "fwVersion": "1.33.0",
+                    "fwVersion": "1.35.0",
                     "groupId": 0,
                     "ping": 0
                 }

@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
+import tkinter.font as tkfont
 import threading
 import json
 import os
@@ -10,6 +11,19 @@ from wiz_discovery import WizDiscovery  # Import the WizDiscovery class
 
 # File for persisting data
 DATA_FILE = "wiz_data.json"
+
+BACKGROUND_COLOR = "#f3f4f6"
+SURFACE_COLOR = "#ffffff"
+ACCENT_COLOR = "#6366f1"
+ACCENT_HOVER_COLOR = "#4f46e5"
+SECONDARY_COLOR = "#e5e7eb"
+DANGER_COLOR = "#f87171"
+DANGER_HOVER_COLOR = "#ef4444"
+TEXT_COLOR = "#111827"
+MUTED_TEXT_COLOR = "#6b7280"
+BORDER_COLOR = "#d1d5db"
+LOG_BACKGROUND_COLOR = "#111827"
+PRESET_BUTTON_COLOR = "#dbeafe"
 
 BRIGHTNESS_MIN = 10
 BRIGHTNESS_MAX = 100
@@ -161,6 +175,7 @@ class WizGUI(tk.Tk):
         self.resizable(True, True)
         self.style = ttk.Style(self)
         self.style.theme_use('clam')  # Can be changed to 'default', 'classic', etc.
+        self._configure_style()
 
         self.discovery = WizDiscovery()  # Initialize the WizDiscovery class
         self.data = load_data()
@@ -171,39 +186,146 @@ class WizGUI(tk.Tk):
         self.create_widgets()
         self.stop_event = self.update_status_periodically()
 
+    def _configure_style(self):
+        self.configure(bg=BACKGROUND_COLOR)
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(family="Segoe UI", size=10)
+
+        text_font = tkfont.nametofont("TkTextFont")
+        text_font.configure(family="Segoe UI", size=10)
+
+        fixed_font = tkfont.nametofont("TkFixedFont")
+        fixed_font.configure(family="Consolas", size=10)
+
+        self.heading_font = tkfont.Font(family="Segoe UI", size=18, weight="bold")
+        self.subheading_font = tkfont.Font(family="Segoe UI", size=11)
+        self.room_title_font = tkfont.Font(family="Segoe UI", size=12, weight="bold")
+
+        # Base styles
+        self.style.configure("TFrame", background=BACKGROUND_COLOR)
+        self.style.configure("App.TFrame", background=BACKGROUND_COLOR)
+        self.style.configure("Toolbar.TFrame", background=BACKGROUND_COLOR)
+        self.style.configure("CardContainer.TFrame", background=SURFACE_COLOR)
+        self.style.configure("CardHeader.TFrame", background=SURFACE_COLOR)
+        self.style.configure("CardBody.TFrame", background=SURFACE_COLOR)
+        self.style.configure("Section.TFrame", background=SURFACE_COLOR)
+        self.style.configure("SectionHeader.TFrame", background=SURFACE_COLOR)
+        self.style.configure("SectionBody.TFrame", background=SURFACE_COLOR)
+        self.style.configure("Log.TFrame", background=LOG_BACKGROUND_COLOR)
+
+        self.style.configure("Heading.TLabel", background=BACKGROUND_COLOR, foreground=TEXT_COLOR, font=self.heading_font)
+        self.style.configure("Subheading.TLabel", background=BACKGROUND_COLOR, foreground=MUTED_TEXT_COLOR, font=self.subheading_font)
+        self.style.configure("CardTitle.TLabel", background=SURFACE_COLOR, foreground=TEXT_COLOR, font=self.room_title_font)
+        self.style.configure("Card.TLabel", background=SURFACE_COLOR, foreground=TEXT_COLOR)
+        self.style.configure("CardMuted.TLabel", background=SURFACE_COLOR, foreground=MUTED_TEXT_COLOR)
+        self.style.configure("Muted.TLabel", background=BACKGROUND_COLOR, foreground=MUTED_TEXT_COLOR)
+        self.style.configure("Badge.TLabel", background=ACCENT_COLOR, foreground="white", padding=(8, 2))
+
+        self.style.configure("Divider.TSeparator", background=BORDER_COLOR)
+
+        # Buttons
+        self.style.configure("Primary.TButton", background=ACCENT_COLOR, foreground="white", padding=(12, 6), borderwidth=0, focusthickness=0)
+        self.style.map("Primary.TButton", background=[("active", ACCENT_HOVER_COLOR), ("disabled", "#a5b4fc")], foreground=[("disabled", "#e0e7ff")])
+
+        self.style.configure("Secondary.TButton", background=SECONDARY_COLOR, foreground=TEXT_COLOR, padding=(10, 5), borderwidth=0)
+        self.style.map("Secondary.TButton", background=[("active", "#d1d5db"), ("disabled", SECONDARY_COLOR)])
+
+        self.style.configure("Ghost.TButton", background=BACKGROUND_COLOR, foreground=TEXT_COLOR, padding=(10, 5), borderwidth=0)
+        self.style.map("Ghost.TButton", background=[("active", SECONDARY_COLOR)])
+
+        self.style.configure("Danger.TButton", background=DANGER_COLOR, foreground="white", padding=(10, 5), borderwidth=0)
+        self.style.map("Danger.TButton", background=[("active", DANGER_HOVER_COLOR)])
+
+        self.style.configure("Preset.TButton", background=PRESET_BUTTON_COLOR, foreground=ACCENT_COLOR, padding=(8, 3), borderwidth=0)
+        self.style.map("Preset.TButton", background=[("active", "#bfdbfe")])
+
+        self.style.configure("Toggle.TButton", background=SURFACE_COLOR, foreground=ACCENT_COLOR, padding=(0, 0), borderwidth=0)
+        self.style.map("Toggle.TButton", foreground=[("active", ACCENT_HOVER_COLOR)])
+
+        # Form controls
+        self.style.configure("App.TEntry", fieldbackground=SURFACE_COLOR, foreground=TEXT_COLOR, padding=(6, 4))
+        self.style.configure(
+            "Title.TEntry",
+            fieldbackground=SURFACE_COLOR,
+            foreground=TEXT_COLOR,
+            font=self.room_title_font,
+            padding=(8, 6),
+        )
+        self.style.configure(
+            "App.TCombobox",
+            fieldbackground=SURFACE_COLOR,
+            background=SURFACE_COLOR,
+            foreground=TEXT_COLOR,
+            padding=6,
+            arrowsize=14,
+        )
+        self.style.map(
+            "App.TCombobox",
+            fieldbackground=[("readonly", SURFACE_COLOR)],
+            foreground=[("readonly", TEXT_COLOR)],
+        )
+
+        self.style.configure("Vertical.TScrollbar", background=BACKGROUND_COLOR, troughcolor=BACKGROUND_COLOR, bordercolor=BACKGROUND_COLOR)
+
     def create_widgets(self):
-        # Instruction text
-        instructions = ttk.Label(self, text="Click the button to discover WiZ devices on your local network.")
-        instructions.pack(pady=10)
+        self.main_container = ttk.Frame(self, style="App.TFrame", padding=(20, 10, 20, 20))
+        self.main_container.pack(fill="both", expand=True)
 
-        # Frame for buttons and log output
-        top_frame = ttk.Frame(self)
-        top_frame.pack(fill='x', padx=10, pady=5)
+        header_frame = ttk.Frame(self.main_container, style="Toolbar.TFrame")
+        header_frame.pack(fill="x")
+        header_frame.columnconfigure(0, weight=1)
 
-        # Discover button
-        discover_button = ttk.Button(top_frame, text="Discover Devices", command=self.on_discover_click)
-        discover_button.pack(side='left')
+        heading_label = ttk.Label(header_frame, text="WiZ Device Manager", style="Heading.TLabel")
+        heading_label.grid(row=0, column=0, sticky="w")
 
-        self.log_toggle = ttk.Button(top_frame, text="Show Logs", command=self.toggle_logs)
-        self.log_toggle.pack(side='right')
+        subheading_label = ttk.Label(
+            header_frame,
+            text="Click Discover Devices to scan your WiZ network and fine-tune each light.",
+            style="Subheading.TLabel",
+        )
+        subheading_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
 
-        # Scrolled log box
-        self.output_container = ttk.Frame(self)
-        self.output_box = scrolledtext.ScrolledText(self.output_container, width=80, height=10, state="disabled")
+        action_frame = ttk.Frame(header_frame, style="Toolbar.TFrame")
+        action_frame.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        discover_button = ttk.Button(
+            action_frame,
+            text="Discover Devices",
+            style="Primary.TButton",
+            command=self.on_discover_click,
+        )
+        discover_button.pack(side="left", padx=(0, 10))
+        discover_button.configure(takefocus=False)
+
+        self.log_toggle = ttk.Button(action_frame, text="Show Logs", style="Ghost.TButton", command=self.toggle_logs)
+        self.log_toggle.pack(side="left")
+
+        ttk.Separator(self.main_container, style="Divider.TSeparator").pack(fill="x", pady=(16, 16))
+
+        self.output_container = ttk.Frame(self.main_container, style="Log.TFrame", padding=12)
+        self.output_box = scrolledtext.ScrolledText(self.output_container, width=80, height=8, state="disabled")
         self.output_box.pack(fill='both', expand=True)
+        self.output_box.configure(
+            bg=LOG_BACKGROUND_COLOR,
+            fg="#e5e7eb",
+            insertbackground="#e5e7eb",
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Consolas", 10),
+        )
         self.output_visible = False
 
-        # Control frame for device controls
-        self.control_container = ttk.Frame(self)
-        self.control_container.pack(fill="both", expand=True, padx=10, pady=5)
+        self.control_container = ttk.Frame(self.main_container, style="App.TFrame")
+        self.control_container.pack(fill="both", expand=True)
 
-        self.control_canvas = tk.Canvas(self.control_container, borderwidth=0, highlightthickness=0)
+        self.control_canvas = tk.Canvas(self.control_container, borderwidth=0, highlightthickness=0, bg=BACKGROUND_COLOR)
         self.control_scrollbar = ttk.Scrollbar(self.control_container, orient="vertical", command=self.control_canvas.yview)
 
         self.control_canvas.pack(side="left", fill="both", expand=True)
         self.control_scrollbar.pack(side="right", fill="y")
 
-        self.control_frame = ttk.Frame(self.control_canvas)
+        self.control_frame = ttk.Frame(self.control_canvas, style="App.TFrame")
         self._control_frame_id = self.control_canvas.create_window((0, 0), window=self.control_frame, anchor="nw")
         self.control_canvas.configure(yscrollcommand=self.control_scrollbar.set)
 
@@ -333,7 +455,7 @@ class WizGUI(tk.Tk):
             self.output_visible = False
             self.log_toggle.config(text="Show Logs")
         else:
-            self.output_container.pack(fill='both', expand=False, padx=10, pady=10)
+            self.output_container.pack(fill='both', expand=False, pady=(0, 16), before=self.control_container)
             self.output_visible = True
             self.log_toggle.config(text="Hide Logs")
 
@@ -349,13 +471,13 @@ class WizGUI(tk.Tk):
         self.control_canvas.yview_scroll(int(-event.delta / 120), "units")
 
     def _create_collapsible_section(self, parent, title, collapsed=True):
-        container = ttk.Frame(parent)
-        header = ttk.Frame(container)
+        container = ttk.Frame(parent, style="Section.TFrame")
+        header = ttk.Frame(container, style="SectionHeader.TFrame")
         header.pack(fill="x")
-        body = ttk.Frame(container)
+        body = ttk.Frame(container, style="SectionBody.TFrame", padding=(4, 0, 4, 0))
 
         def show():
-            body.pack(fill="x", pady=(4, 0))
+            body.pack(fill="x", pady=(8, 0))
             toggle_btn.config(text=f"Hide {title}")
 
         def hide():
@@ -368,7 +490,7 @@ class WizGUI(tk.Tk):
             else:
                 show()
 
-        toggle_btn = ttk.Button(header, text="", command=toggle)
+        toggle_btn = ttk.Button(header, text="", style="Toggle.TButton", command=toggle)
         toggle_btn.pack(side="left")
 
         if collapsed:
@@ -451,56 +573,73 @@ class WizGUI(tk.Tk):
 
         rooms = self._group_devices_by_room(include_offline=True)
 
-        for room_id, devices_in_room in rooms.items():
+        if not rooms:
+            empty_label = ttk.Label(self.control_frame, text="No rooms registered yet.", style="Muted.TLabel")
+            empty_label.pack(pady=20)
+            return
+
+        for room_index, (room_id, devices_in_room) in enumerate(rooms.items()):
             room_name = self.data["rooms"].get(room_id, f"Room {room_id}")
             room_settings = self._get_room_settings(room_id)
             device_ips = tuple(device["ip"] for device in devices_in_room)
 
-            room_frame = ttk.LabelFrame(self.control_frame, text=f"{room_name} (ID: {room_id})")
-            room_frame.pack(fill="x", padx=5, pady=5)
+            card = tk.Frame(
+                self.control_frame,
+                bg=SURFACE_COLOR,
+                bd=0,
+                highlightbackground=BORDER_COLOR,
+                highlightcolor=BORDER_COLOR,
+                highlightthickness=1,
+            )
+            card.pack(fill="x", pady=12, padx=4)
 
-            header_frame = ttk.Frame(room_frame)
-            header_frame.pack(fill="x", pady=5)
+            room_frame = ttk.Frame(card, style="CardContainer.TFrame", padding=16)
+            room_frame.pack(fill="both", expand=True)
+            room_frame.columnconfigure(0, weight=1)
+
+            header_frame = ttk.Frame(room_frame, style="CardHeader.TFrame")
+            header_frame.grid(row=0, column=0, sticky="ew")
+            header_frame.columnconfigure(0, weight=1)
 
             name_var = tk.StringVar(value=room_name)
-            name_entry = ttk.Entry(header_frame, textvariable=name_var, width=25)
-            name_entry.pack(side="left", padx=5)
+            name_container = ttk.Frame(header_frame, style="CardHeader.TFrame")
+            name_container.grid(row=0, column=0, sticky="w")
+
+            name_entry = ttk.Entry(name_container, textvariable=name_var, width=28, style="Title.TEntry")
+            name_entry.pack(side="left")
+
+            room_badge = ttk.Label(name_container, text=f"ID {room_id}", style="Badge.TLabel")
+            room_badge.pack(side="left", padx=(12, 0))
 
             save_btn = ttk.Button(
                 header_frame,
                 text="Save Name",
+                style="Ghost.TButton",
                 command=lambda rid=room_id, var=name_var: self.on_save_room_name(rid, var),
             )
-            save_btn.pack(side="left", padx=5)
+            save_btn.grid(row=0, column=1, sticky="e")
 
-            turn_on_btn = ttk.Button(
-                header_frame,
-                text="Turn All On",
-                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, True),
-            )
-            turn_on_btn.pack(side="left", padx=5)
-
-            turn_off_btn = ttk.Button(
-                header_frame,
-                text="Turn All Off",
-                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, False),
-            )
-            turn_off_btn.pack(side="left", padx=5)
-
-            scene_label = ttk.Label(header_frame, text="Scene:")
-            scene_label.pack(side="left", padx=(15, 0))
+            scene_frame = ttk.Frame(room_frame, style="CardHeader.TFrame")
+            scene_frame.grid(row=1, column=0, sticky="ew", pady=(12, 8))
+            scene_frame.columnconfigure(0, weight=1)
 
             initial_scene_choice = self._format_scene_choice(room_settings.get("sceneId"))
             scene_var = tk.StringVar(value=initial_scene_choice)
 
+            scene_controls = ttk.Frame(scene_frame, style="CardHeader.TFrame")
+            scene_controls.grid(row=0, column=0, sticky="w")
+
+            ttk.Label(scene_controls, text="Scene", style="CardMuted.TLabel").pack(side="left")
+
             scene_combo = ttk.Combobox(
-                header_frame,
+                scene_controls,
                 values=SCENE_CHOICES,
                 textvariable=scene_var,
-                width=20,
+                width=24,
                 state="readonly",
+                style="App.TCombobox",
             )
-            scene_combo.pack(side="left", padx=5)
+            scene_combo.pack(side="left", padx=(8, 10))
 
             speed_value = room_settings.get("sceneSpeed", 100)
             try:
@@ -510,33 +649,61 @@ class WizGUI(tk.Tk):
             speed_value = max(20, min(200, speed_value))
             speed_var = tk.IntVar(value=speed_value)
 
-            speed_label = ttk.Label(header_frame, text="Speed")
-            speed_label.pack(side="left", padx=(10, 0))
-
-            speed_spin = tk.Spinbox(header_frame, from_=20, to=200, textvariable=speed_var, width=5)
-            speed_spin.pack(side="left", padx=5)
+            ttk.Label(scene_controls, text="Speed", style="CardMuted.TLabel").pack(side="left")
+            speed_spin = tk.Spinbox(scene_controls, from_=20, to=200, textvariable=speed_var, width=4)
+            speed_spin.pack(side="left", padx=(6, 10))
+            speed_spin.configure(
+                background=SURFACE_COLOR,
+                foreground=TEXT_COLOR,
+                relief="flat",
+                highlightthickness=1,
+                highlightbackground=BORDER_COLOR,
+                highlightcolor=ACCENT_COLOR,
+                insertbackground=TEXT_COLOR,
+            )
 
             apply_scene_btn = ttk.Button(
-                header_frame,
+                scene_controls,
                 text="Apply Scene",
+                style="Secondary.TButton",
                 command=lambda rid=room_id, ips=device_ips, svar=scene_var, spd_var=speed_var: self.on_apply_room_scene(rid, ips, svar, spd_var),
             )
-            apply_scene_btn.pack(side="left", padx=5)
+            apply_scene_btn.pack(side="left")
 
-            for device in devices_in_room:
+            room_actions = ttk.Frame(scene_frame, style="CardHeader.TFrame")
+            room_actions.grid(row=0, column=1, sticky="e")
+
+            turn_on_btn = ttk.Button(
+                room_actions,
+                text="Turn All On",
+                style="Ghost.TButton",
+                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, True),
+            )
+            turn_on_btn.pack(side="left", padx=(0, 6))
+
+            turn_off_btn = ttk.Button(
+                room_actions,
+                text="Turn All Off",
+                style="Ghost.TButton",
+                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, False),
+            )
+            turn_off_btn.pack(side="left")
+
+            for device_index, device in enumerate(devices_in_room):
+                row_offset = 2 + device_index * 2
                 ip = device["ip"]
                 module_name = device.get("moduleName", f"Device {ip}")
                 state = self.device_status_cache.get(ip)
 
                 if ip not in self.active_ips:
                     state_text = "Offline"
-                    state_color = "gray"
+                    state_color = "#9ca3af"
                 elif state is None:
                     state_text = "Unknown"
-                    state_color = "orange"
+                    state_color = "#f59e0b"
                 else:
                     state_text = "On" if state else "Off"
-                    state_color = "green" if state else "red"
+                    state_color = "#10b981" if state else "#ef4444"
 
                 preferences = self._get_device_preferences(ip)
 
@@ -571,60 +738,64 @@ class WizGUI(tk.Tk):
                 except (TypeError, ValueError):
                     blue_value = 0
 
-                device_frame = ttk.Frame(room_frame)
-                device_frame.pack(fill="x", pady=4, padx=10)
+                device_frame = ttk.Frame(room_frame, style="CardBody.TFrame", padding=(0, 8))
+                device_frame.grid(row=row_offset, column=0, sticky="ew")
                 device_frame.columnconfigure(1, weight=1)
 
-                name_label = ttk.Label(device_frame, text=f"{module_name} ({ip})")
+                name_label = ttk.Label(device_frame, text=f"{module_name} ({ip})", style="Card.TLabel")
                 name_label.grid(row=0, column=0, sticky="w")
 
-                status_label = ttk.Label(device_frame, text=f"Status: {state_text}", foreground=state_color)
+                status_label = ttk.Label(
+                    device_frame,
+                    text=f"Status: {state_text}",
+                    style="Card.TLabel",
+                    foreground=state_color,
+                )
                 status_label.grid(row=0, column=1, sticky="w", padx=10)
 
-                on_button = ttk.Button(device_frame, text="Turn On", command=lambda i=ip: self.on_toggle_device(i, True))
+                on_button = ttk.Button(device_frame, text="Turn On", style="Primary.TButton", command=lambda i=ip: self.on_toggle_device(i, True))
                 on_button.grid(row=0, column=2, padx=5)
 
-                off_button = ttk.Button(device_frame, text="Turn Off", command=lambda i=ip: self.on_toggle_device(i, False))
+                off_button = ttk.Button(device_frame, text="Turn Off", style="Secondary.TButton", command=lambda i=ip: self.on_toggle_device(i, False))
                 off_button.grid(row=0, column=3, padx=5)
 
-                remove_button = ttk.Button(device_frame, text="Remove", command=lambda i=ip: self.on_remove_device(i))
+                remove_button = ttk.Button(device_frame, text="Remove", style="Danger.TButton", command=lambda i=ip: self.on_remove_device(i))
                 remove_button.grid(row=0, column=4, padx=5)
 
-                color_container, color_frame = self._create_collapsible_section(
-                    device_frame, "Color Controls", collapsed=True
-                )
-                color_container.grid(row=1, column=0, columnspan=5, sticky="we", pady=(4, 0))
+                color_container, color_frame = self._create_collapsible_section(device_frame, "Color Controls", collapsed=True)
+                color_container.grid(row=1, column=0, columnspan=5, sticky="we", pady=(8, 0))
                 color_frame.columnconfigure(1, weight=1)
 
                 brightness_var = tk.IntVar(value=brightness_value)
                 brightness_label_var = tk.StringVar(value=f"{brightness_value}%")
 
-                ttk.Label(color_frame, text="Brightness").grid(row=0, column=0, sticky="w")
+                ttk.Label(color_frame, text="Brightness", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w")
                 ttk.Scale(
                     color_frame,
                     from_=BRIGHTNESS_MIN,
                     to=BRIGHTNESS_MAX,
                     variable=brightness_var,
                     command=lambda value, lbl=brightness_label_var: self._update_scale_label(lbl, value, "%"),
-                ).grid(row=0, column=1, sticky="we", padx=(5, 10))
-                ttk.Label(color_frame, textvariable=brightness_label_var, width=6).grid(row=0, column=2, sticky="w")
+                ).grid(row=0, column=1, sticky="we", padx=(8, 10))
+                ttk.Label(color_frame, textvariable=brightness_label_var, style="CardMuted.TLabel", width=6).grid(row=0, column=2, sticky="w")
 
                 temperature_var = tk.IntVar(value=temperature_value)
                 temperature_label_var = tk.StringVar(value=f"{temperature_value}K")
 
-                ttk.Label(color_frame, text="Temperature").grid(row=1, column=0, sticky="w")
+                ttk.Label(color_frame, text="Temperature", style="CardMuted.TLabel").grid(row=1, column=0, sticky="w")
                 ttk.Scale(
                     color_frame,
                     from_=TEMPERATURE_MIN,
                     to=TEMPERATURE_MAX,
                     variable=temperature_var,
                     command=lambda value, lbl=temperature_label_var: self._update_scale_label(lbl, value, "K"),
-                ).grid(row=1, column=1, sticky="we", padx=(5, 10))
-                ttk.Label(color_frame, textvariable=temperature_label_var, width=8).grid(row=1, column=2, sticky="w")
+                ).grid(row=1, column=1, sticky="we", padx=(8, 10))
+                ttk.Label(color_frame, textvariable=temperature_label_var, style="CardMuted.TLabel", width=8).grid(row=1, column=2, sticky="w")
 
                 apply_white_btn = ttk.Button(
                     color_frame,
                     text="Apply White",
+                    style="Primary.TButton",
                     command=lambda i=ip, b_var=brightness_var, t_var=temperature_var: self.on_apply_white(i, b_var, t_var),
                 )
                 apply_white_btn.grid(row=1, column=3, padx=5, sticky="e")
@@ -637,56 +808,57 @@ class WizGUI(tk.Tk):
                 green_label_var = tk.StringVar(value=str(green_value))
                 blue_label_var = tk.StringVar(value=str(blue_value))
 
-                ttk.Label(color_frame, text="Red").grid(row=2, column=0, sticky="w", pady=(6, 0))
+                ttk.Label(color_frame, text="Red", style="CardMuted.TLabel").grid(row=2, column=0, sticky="w", pady=(8, 0))
                 ttk.Scale(
                     color_frame,
                     from_=0,
                     to=255,
                     variable=red_var,
                     command=lambda value, lbl=red_label_var: self._update_scale_label(lbl, value),
-                ).grid(row=2, column=1, sticky="we", padx=(5, 10))
-                ttk.Label(color_frame, textvariable=red_label_var, width=4).grid(row=2, column=2, sticky="w")
+                ).grid(row=2, column=1, sticky="we", padx=(8, 10))
+                ttk.Label(color_frame, textvariable=red_label_var, style="CardMuted.TLabel", width=4).grid(row=2, column=2, sticky="w")
 
-                ttk.Label(color_frame, text="Green").grid(row=3, column=0, sticky="w")
+                ttk.Label(color_frame, text="Green", style="CardMuted.TLabel").grid(row=3, column=0, sticky="w")
                 ttk.Scale(
                     color_frame,
                     from_=0,
                     to=255,
                     variable=green_var,
                     command=lambda value, lbl=green_label_var: self._update_scale_label(lbl, value),
-                ).grid(row=3, column=1, sticky="we", padx=(5, 10))
-                ttk.Label(color_frame, textvariable=green_label_var, width=4).grid(row=3, column=2, sticky="w")
+                ).grid(row=3, column=1, sticky="we", padx=(8, 10))
+                ttk.Label(color_frame, textvariable=green_label_var, style="CardMuted.TLabel", width=4).grid(row=3, column=2, sticky="w")
 
-                ttk.Label(color_frame, text="Blue").grid(row=4, column=0, sticky="w")
+                ttk.Label(color_frame, text="Blue", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w")
                 ttk.Scale(
                     color_frame,
                     from_=0,
                     to=255,
                     variable=blue_var,
                     command=lambda value, lbl=blue_label_var: self._update_scale_label(lbl, value),
-                ).grid(row=4, column=1, sticky="we", padx=(5, 10))
-                ttk.Label(color_frame, textvariable=blue_label_var, width=4).grid(row=4, column=2, sticky="w")
+                ).grid(row=4, column=1, sticky="we", padx=(8, 10))
+                ttk.Label(color_frame, textvariable=blue_label_var, style="CardMuted.TLabel", width=4).grid(row=4, column=2, sticky="w")
 
                 apply_color_btn = ttk.Button(
                     color_frame,
                     text="Apply Color",
+                    style="Primary.TButton",
                     command=lambda i=ip, b_var=brightness_var, r_var=red_var, g_var=green_var, bl_var=blue_var: self.on_apply_color(i, b_var, r_var, g_var, bl_var),
                 )
                 apply_color_btn.grid(row=2, column=3, rowspan=3, padx=5, sticky="nsw")
 
-                preset_frame = ttk.Frame(color_frame)
-                preset_frame.grid(row=5, column=0, columnspan=4, sticky="w", pady=(4, 0))
+                preset_frame = ttk.Frame(color_frame, style="SectionBody.TFrame")
+                preset_frame.grid(row=5, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
                 for preset in COLOR_PRESETS:
                     ttk.Button(
                         preset_frame,
                         text=preset["label"],
+                        style="Preset.TButton",
                         command=lambda p=preset, i=ip, b_var=brightness_var, t_var=temperature_var, r_var=red_var, g_var=green_var, bl_var=blue_var, b_lbl=brightness_label_var, t_lbl=temperature_label_var, r_lbl=red_label_var, g_lbl=green_label_var, bl_lbl=blue_label_var: self.on_apply_preset(i, p, b_var, t_var, r_var, g_var, bl_var, b_lbl, t_lbl, r_lbl, g_lbl, bl_lbl),
-                    ).pack(side="left", padx=2)
+                    ).pack(side="left", padx=4, pady=(0, 4))
 
-        if not rooms:
-            empty_label = ttk.Label(self.control_frame, text="No rooms registered yet.")
-            empty_label.pack(pady=10)
+                if device_index < len(devices_in_room) - 1:
+                    ttk.Separator(room_frame, style="Divider.TSeparator").grid(row=row_offset + 1, column=0, sticky="ew", pady=(4, 0))
 
     def on_apply_white(self, ip, brightness_var, temperature_var):
         try:
