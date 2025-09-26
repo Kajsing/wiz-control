@@ -29,10 +29,12 @@ WiZ Smart Bulb Manager is a Python-based graphical user interface (GUI) applicat
 - **Device Discovery**: Automatically discover WiZ smart bulbs on your local network.
 - **Room Management**: Organize devices by rooms and rename rooms as needed.
 - **Device Control**: Turn individual devices on or off or control all devices within a room simultaneously.
+- **Advanced Color & Brightness**: Adjust brightness, color temperature, and RGB values, or use quick presets stored per bulb.
+- **Room Scenes**: Apply any of the 32 built-in WiZ scenes to an entire room and fine-tune the playback speed.
 - **Remove Devices**: Easily remove devices from the manager.
-- **Real-time Logging**: Monitor actions and device statuses in real-time.
+- **Real-time Logging**: Monitor actions and device statuses in real-time, with a toggle to hide the log when you need more screen space.
 - **Offline Device Detection**: Identify and display devices that are offline.
-- **Persistent Data**: Save device and room configurations for future sessions.
+- **Persistent Data**: Save device, room, and per-light preference data for future sessions.
 
 ## Installation
 
@@ -97,9 +99,13 @@ python3 wiz_gui.py
 3. **Control Devices**:
    - **Individual Control**: Use **Turn On/Turn Off** next to each entry to toggle that bulb.
    - **Room Control**: Use **Turn All On/Turn All Off** in the room header to broadcast a state change to every bulb in the group.
-4. **Manage Rooms**: Use **Rename Room** to assign a friendly name that is cached locally.
-5. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
-6. **Monitor Logs**: The log area records discovery updates, command responses, and connectivity changes for quick troubleshooting.
+4. **Edit Rooms**: Replace the text in the room header, click **Save Name**, and the label will persist between sessions.
+5. **Adjust Light Output**:
+   - Click **Show Color Controls** on a device to reveal brightness, color temperature, and RGB sliders.
+   - Use **Apply White** for tunable-white devices or **Apply Color** for RGB output. Preset buttons auto-fill the sliders and send the command.
+6. **Apply Room Scenes**: Select a scene from the dropdown in the room header, optionally adjust the speed, and click **Apply Scene** to broadcast the preset to every light in that room.
+7. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
+8. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
 
 ## Configuration
 
@@ -118,13 +124,26 @@ The application writes a `wiz_data.json` file alongside the scripts to remember 
       "ip": "192.168.87.10",
       "moduleName": "Ceiling Lamp",
       "roomId": "1",
-      "info": { "result": { "moduleName": "Ceiling Lamp", "roomId": 1, "state": true } }
+      "info": { "result": { "moduleName": "Ceiling Lamp", "roomId": 1, "state": true } },
+      "preferences": {
+        "dimming": 75,
+        "temperature": 3200,
+        "r": 0,
+        "g": 0,
+        "b": 0
+      }
+    }
+  },
+  "room_settings": {
+    "1": {
+      "sceneId": 5,
+      "sceneSpeed": 120
     }
   }
 }
 ```
 
-You can safely delete this file to reset the cache—the application will regenerate it on the next launch.
+You can safely delete this file to reset the cache—the application will regenerate it on the next launch (room names, preferred light levels, and scene choices will revert to defaults).
 
 ## Architecture Notes
 
