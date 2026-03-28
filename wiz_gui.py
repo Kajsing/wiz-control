@@ -1,9 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import tkinter.font as tkfont
+import copy
 import threading
 import json
 import os
+import queue
+import tempfile
 import time
 
 from wiz_discovery import WizDiscovery  # Import the WizDiscovery class
@@ -11,6 +14,7 @@ from wiz_discovery import WizDiscovery  # Import the WizDiscovery class
 
 # File for persisting data
 DATA_FILE = "wiz_data.json"
+DATA_FILE_LOCK = threading.Lock()
 
 BACKGROUND_COLOR = "#f3f4f6"
 SURFACE_COLOR = "#ffffff"
@@ -160,11 +164,23 @@ def load_data():
 
 
 def save_data(data):
-    try:
-        with open(DATA_FILE, "w") as file:
-            json.dump(data, file, indent=4)
-    except Exception as e:
-        messagebox.showerror("Error", f"Could not save data: {e}")
+    directory = os.path.dirname(os.path.abspath(DATA_FILE)) or "."
+    temp_path = None
+
+    with DATA_FILE_LOCK:
+        try:
+            fd, temp_path = tempfile.mkstemp(prefix="wiz_data_", suffix=".json", dir=directory)
+            with os.fdopen(fd, "w") as file:
+                json.dump(data, file, indent=4)
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temp_path, DATA_FILE)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
 
 class WizGUI(tk.Tk):
@@ -173,6 +189,13 @@ class WizGUI(tk.Tk):
         self.title("WiZ Device Manager")
         self.geometry("800x600")
         self.resizable(True, True)
+        self._main_thread = threading.current_thread()
+        self._state_lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
+        self._worker_lock = threading.Lock()
+        self._worker_threads = set()
+        self._ui_queue = queue.Queue()
+        self._closing = False
         self.style = ttk.Style(self)
         self.style.theme_use('clam')  # Can be changed to 'default', 'classic', etc.
         self._configure_style()
@@ -184,6 +207,8 @@ class WizGUI(tk.Tk):
         self._refresh_scheduled = False
 
         self.create_widgets()
+        self.refresh_control_frame()
+        self.after(50, self._process_ui_queue)
         self.stop_event = self.update_status_periodically()
 
     def _configure_style(self):
@@ -341,11 +366,71 @@ class WizGUI(tk.Tk):
         self.control_frame.bind("<Enter>", self._bind_canvas_scroll)
         self.control_frame.bind("<Leave>", self._unbind_canvas_scroll)
 
-    def log(self, message):
+    def _run_on_ui_thread(self, callback, *args, **kwargs):
+        if self._closing:
+            return
+        self._ui_queue.put((callback, args, kwargs))
+
+    def _process_ui_queue(self):
+        while True:
+            try:
+                callback, args, kwargs = self._ui_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if self._closing:
+                continue
+
+            try:
+                callback(*args, **kwargs)
+            except tk.TclError:
+                if not self._closing:
+                    raise
+
+        if not self._closing:
+            self.after(50, self._process_ui_queue)
+
+    def _append_log_message(self, message):
+        if self._closing or not hasattr(self, "output_box") or not self.output_box.winfo_exists():
+            return
         self.output_box.config(state="normal")
         self.output_box.insert(tk.END, f"{message}\n")
         self.output_box.see(tk.END)
         self.output_box.config(state="disabled")
+
+    def log(self, message):
+        self._run_on_ui_thread(self._append_log_message, message)
+
+    def _show_error(self, title, message):
+        if self._closing or not self.winfo_exists():
+            return
+        messagebox.showerror(title, message)
+
+    def _snapshot_data(self):
+        with self._state_lock:
+            return copy.deepcopy(self.data)
+
+    def _save_data(self):
+        try:
+            save_data(self._snapshot_data())
+            return True
+        except Exception as exc:
+            self.log(f"Could not save data: {exc}")
+            self._run_on_ui_thread(self._show_error, "Error", f"Could not save data: {exc}")
+            return False
+
+    def _start_worker(self, target, name):
+        def runner():
+            try:
+                target()
+            finally:
+                with self._worker_lock:
+                    self._worker_threads.discard(threading.current_thread())
+
+        worker = threading.Thread(target=runner, name=name, daemon=True)
+        with self._worker_lock:
+            self._worker_threads.add(worker)
+        worker.start()
 
     def on_toggle_room(self, room_id, devices, state):
         def toggle():
@@ -356,8 +441,9 @@ class WizGUI(tk.Tk):
                     response = self.discovery.send_command(ip, "setState", {"state": state})
                     if response:
                         self.log(f"Device {ip} {'turned on' if state else 'turned off'}.")
-                        self.device_status_cache[ip] = state
-                        self.active_ips.add(ip)
+                        with self._state_lock:
+                            self.device_status_cache[ip] = state
+                            self.active_ips.add(ip)
                         refresh_needed = True
                     else:
                         self.log(f"Could not update device {ip}.")
@@ -367,7 +453,7 @@ class WizGUI(tk.Tk):
             if refresh_needed:
                 self.schedule_refresh()
 
-        threading.Thread(target=toggle, daemon=True).start()
+        self._start_worker(toggle, "toggle-room")
 
     def on_toggle_device(self, ip, state):
         def toggle():
@@ -375,8 +461,9 @@ class WizGUI(tk.Tk):
                 response = self.discovery.send_command(ip, "setState", {"state": state})
                 if response:
                     self.log(f"Device {ip} {'turned on' if state else 'turned off'}.")
-                    self.device_status_cache[ip] = state
-                    self.active_ips.add(ip)
+                    with self._state_lock:
+                        self.device_status_cache[ip] = state
+                        self.active_ips.add(ip)
                     self.schedule_refresh()
                 else:
                     self.log(f"Could not update device {ip}.")
@@ -384,53 +471,72 @@ class WizGUI(tk.Tk):
             except Exception as e:
                 self.log(f"Error while controlling device {ip}: {e}")
 
-        threading.Thread(target=toggle, daemon=True).start()
+        self._start_worker(toggle, "toggle-device")
 
     def on_remove_device(self, ip):
-        if ip in self.data["devices"]:
-            del self.data["devices"][ip]
-            self.active_ips.discard(ip)
-            self.device_status_cache.pop(ip, None)
-            save_data(self.data)
+        removed = False
+        with self._state_lock:
+            if ip in self.data["devices"]:
+                del self.data["devices"][ip]
+                self.active_ips.discard(ip)
+                self.device_status_cache.pop(ip, None)
+                removed = True
+
+        if removed:
+            self._save_data()
             self.log(f"Device {ip} removed.")
-            self.refresh_control_frame()
+            self.schedule_refresh()
 
     def on_discover_click(self):
-        threading.Thread(target=self.discover_devices, daemon=True).start()
+        self._start_worker(self.discover_devices, "discover-devices")
 
     def schedule_refresh(self):
-        if getattr(self, "_refresh_scheduled", False):
+        if self._closing:
             return
-        self._refresh_scheduled = True
-        self.after(0, self._perform_refresh)
+
+        with self._refresh_lock:
+            if self._refresh_scheduled:
+                return
+            self._refresh_scheduled = True
+
+        self._run_on_ui_thread(self._perform_refresh)
 
     def _perform_refresh(self):
-        self._refresh_scheduled = False
+        with self._refresh_lock:
+            self._refresh_scheduled = False
+
+        if self._closing:
+            return
         self.refresh_control_frame()
 
     def _get_device_preferences(self, ip):
-        record = self.data["devices"].setdefault(ip, {})
-        preferences = record.get("preferences")
-        if not isinstance(preferences, dict):
-            preferences = {}
-            record["preferences"] = preferences
-        return preferences
+        with self._state_lock:
+            record = self.data["devices"].setdefault(ip, {})
+            preferences = record.get("preferences")
+            if not isinstance(preferences, dict):
+                preferences = {}
+                record["preferences"] = preferences
+            return preferences
 
     def _store_device_preferences(self, ip, **updates):
-        preferences = self._get_device_preferences(ip)
         sanitized = {key: value for key, value in updates.items() if value is not None}
         if not sanitized:
             return
-        preferences.update(sanitized)
-        save_data(self.data)
+
+        with self._state_lock:
+            preferences = self._get_device_preferences(ip)
+            preferences.update(sanitized)
+
+        self._save_data()
 
     def _get_room_settings(self, room_id):
-        room_settings = self.data.setdefault("room_settings", {})
-        settings = room_settings.get(room_id)
-        if not isinstance(settings, dict):
-            settings = {}
-            room_settings[room_id] = settings
-        return settings
+        with self._state_lock:
+            room_settings = self.data.setdefault("room_settings", {})
+            settings = room_settings.get(room_id)
+            if not isinstance(settings, dict):
+                settings = {}
+                room_settings[room_id] = settings
+            return settings
 
     def _format_scene_choice(self, scene_id):
         if scene_id in SCENE_MAP:
@@ -501,8 +607,9 @@ class WizGUI(tk.Tk):
         return container, body
 
     def _build_device_record(self, ip, info):
-        existing = self.data["devices"].get(ip, {})
-        raw_info = info if isinstance(info, dict) else existing.get("info", {})
+        with self._state_lock:
+            existing = self.data["devices"].get(ip, {})
+            raw_info = info if isinstance(info, dict) else existing.get("info", {})
         if not isinstance(raw_info, dict):
             raw_info = {}
 
@@ -526,43 +633,56 @@ class WizGUI(tk.Tk):
             "preferences": existing.get("preferences", {}),
         }
 
-    def _group_devices_by_room(self, include_offline=True):
-        grouped = {}
-        for ip, record in self.data["devices"].items():
-            if not include_offline and ip not in self.active_ips:
-                continue
-            room_id = record.get("roomId", "Unknown")
-            grouped.setdefault(room_id, []).append(record)
+    def _build_view_snapshot(self, include_offline=True):
+        with self._state_lock:
+            grouped = {}
+            active_ips = set(self.active_ips)
+            device_status_cache = dict(self.device_status_cache)
+            room_names = dict(self.data.get("rooms", {}))
+            room_settings = {
+                room_id: dict(settings) if isinstance(settings, dict) else {}
+                for room_id, settings in self.data.get("room_settings", {}).items()
+            }
+
+            for ip, record in self.data["devices"].items():
+                if not include_offline and ip not in active_ips:
+                    continue
+                room_id = record.get("roomId", "Unknown")
+                grouped.setdefault(room_id, []).append(copy.deepcopy(record))
+
         for device_list in grouped.values():
             device_list.sort(key=lambda entry: entry.get("moduleName", ""))
-        return dict(sorted(grouped.items(), key=lambda item: item[0]))
+
+        rooms = dict(sorted(grouped.items(), key=lambda item: item[0]))
+        return rooms, active_ips, device_status_cache, room_names, room_settings
 
     def discover_devices(self):
         self.log("Starting device discovery...")
         try:
             discovered = self.discovery.discover_wiz_devices()
             found_ips = [ip for ip, _ in discovered]
-            self.active_ips = set(found_ips)
+            with self._state_lock:
+                self.active_ips = set(found_ips)
 
-            updated = False
-            for ip, info in discovered:
-                record = self._build_device_record(ip, info)
-                if self.data["devices"].get(ip) != record:
-                    updated = True
-                self.data["devices"][ip] = record
-                self.device_status_cache.setdefault(ip, None)
+                updated = False
+                for ip, info in discovered:
+                    record = self._build_device_record(ip, info)
+                    if self.data["devices"].get(ip) != record:
+                        updated = True
+                    self.data["devices"][ip] = record
+                    self.device_status_cache.setdefault(ip, None)
 
             if discovered:
                 self.log(f"WiZ devices found: {len(discovered)}")
-                rooms = self._group_devices_by_room(include_offline=False)
+                rooms, _, _, room_names, _ = self._build_view_snapshot(include_offline=False)
                 for room_id, devices_in_room in rooms.items():
-                    room_name = self.data["rooms"].get(room_id, f"Room {room_id}")
+                    room_name = room_names.get(room_id, f"Room {room_id}")
                     self.log(f"  {room_name} (ID: {room_id})")
             else:
                 self.log("No WiZ devices found.")
 
             if updated:
-                save_data(self.data)
+                self._save_data()
             self.schedule_refresh()
         except Exception as e:
             self.log(f"Error during discovery: {e}")
@@ -571,7 +691,7 @@ class WizGUI(tk.Tk):
         for widget in self.control_frame.winfo_children():
             widget.destroy()
 
-        rooms = self._group_devices_by_room(include_offline=True)
+        rooms, active_ips, device_status_cache, room_names, room_settings_map = self._build_view_snapshot(include_offline=True)
 
         if not rooms:
             empty_label = ttk.Label(self.control_frame, text="No rooms registered yet.", style="Muted.TLabel")
@@ -579,8 +699,8 @@ class WizGUI(tk.Tk):
             return
 
         for room_index, (room_id, devices_in_room) in enumerate(rooms.items()):
-            room_name = self.data["rooms"].get(room_id, f"Room {room_id}")
-            room_settings = self._get_room_settings(room_id)
+            room_name = room_names.get(room_id, f"Room {room_id}")
+            room_settings = room_settings_map.get(room_id, {})
             device_ips = tuple(device["ip"] for device in devices_in_room)
 
             card = tk.Frame(
@@ -693,9 +813,9 @@ class WizGUI(tk.Tk):
                 row_offset = 2 + device_index * 2
                 ip = device["ip"]
                 module_name = device.get("moduleName", f"Device {ip}")
-                state = self.device_status_cache.get(ip)
+                state = device_status_cache.get(ip)
 
-                if ip not in self.active_ips:
+                if ip not in active_ips:
                     state_text = "Offline"
                     state_color = "#9ca3af"
                 elif state is None:
@@ -705,7 +825,9 @@ class WizGUI(tk.Tk):
                     state_text = "On" if state else "Off"
                     state_color = "#10b981" if state else "#ef4444"
 
-                preferences = self._get_device_preferences(ip)
+                preferences = device.get("preferences", {})
+                if not isinstance(preferences, dict):
+                    preferences = {}
 
                 brightness_pref = preferences.get("dimming", DEFAULT_DIMMING)
                 temperature_pref = preferences.get("temperature", DEFAULT_TEMPERATURE)
@@ -878,8 +1000,9 @@ class WizGUI(tk.Tk):
                 response = self.discovery.set_color_temperature(ip, temperature, dimming=brightness, turn_on=True)
                 if response:
                     self.log(f"Applied white settings to {ip} (brightness {brightness}%, {temperature}K).")
-                    self.device_status_cache[ip] = True
-                    self.active_ips.add(ip)
+                    with self._state_lock:
+                        self.device_status_cache[ip] = True
+                        self.active_ips.add(ip)
                     self._store_device_preferences(ip, dimming=brightness, temperature=temperature)
                     self.schedule_refresh()
                 else:
@@ -887,7 +1010,7 @@ class WizGUI(tk.Tk):
             except Exception as exc:
                 self.log(f"Error applying white settings to {ip}: {exc}")
 
-        threading.Thread(target=apply, daemon=True).start()
+        self._start_worker(apply, "apply-white")
 
     def on_apply_color(self, ip, brightness_var, red_var, green_var, blue_var):
         try:
@@ -918,8 +1041,9 @@ class WizGUI(tk.Tk):
                 )
                 if response:
                     self.log(f"Applied color to {ip} (R{red} G{green} B{blue}, brightness {brightness}%).")
-                    self.device_status_cache[ip] = True
-                    self.active_ips.add(ip)
+                    with self._state_lock:
+                        self.device_status_cache[ip] = True
+                        self.active_ips.add(ip)
                     self._store_device_preferences(ip, dimming=brightness, r=red, g=green, b=blue)
                     self.schedule_refresh()
                 else:
@@ -927,7 +1051,7 @@ class WizGUI(tk.Tk):
             except Exception as exc:
                 self.log(f"Error applying color to {ip}: {exc}")
 
-        threading.Thread(target=apply, daemon=True).start()
+        self._start_worker(apply, "apply-color")
 
     def on_apply_preset(
         self,
@@ -991,26 +1115,28 @@ class WizGUI(tk.Tk):
                     response = self.discovery.set_scene(ip, scene_id=scene_id, speed=speed_value, turn_on=True)
                     if response:
                         success = True
-                        self.device_status_cache[ip] = True
-                        self.active_ips.add(ip)
+                        with self._state_lock:
+                            self.device_status_cache[ip] = True
+                            self.active_ips.add(ip)
                     else:
                         self.log(f"Device {ip} did not accept scene {scene_id}.")
                 except Exception as exc:
                     self.log(f"Error applying scene {scene_id} to {ip}: {exc}")
 
             if success:
-                settings = self._get_room_settings(room_id)
-                settings["sceneId"] = scene_id
-                if speed_value is not None:
-                    settings["sceneSpeed"] = speed_value
-                save_data(self.data)
+                with self._state_lock:
+                    settings = self._get_room_settings(room_id)
+                    settings["sceneId"] = scene_id
+                    if speed_value is not None:
+                        settings["sceneSpeed"] = speed_value
+                self._save_data()
                 scene_name = SCENE_MAP.get(scene_id, "Scene")
                 self.log(f"Applied scene {scene_id} ({scene_name}) to room {room_id}.")
                 self.schedule_refresh()
             else:
                 self.log(f"Failed to apply scene {scene_id} to room {room_id}.")
 
-        threading.Thread(target=apply, daemon=True).start()
+        self._start_worker(apply, "apply-room-scene")
 
     def update_status_periodically(self):
         stop_event = threading.Event()
@@ -1018,32 +1144,40 @@ class WizGUI(tk.Tk):
         def update():
             while not stop_event.is_set():
                 state_changed = False
-                for ip in list(self.data["devices"].keys()):
+                with self._state_lock:
+                    device_ips = list(self.data["devices"].keys())
+
+                for ip in device_ips:
                     if stop_event.is_set():
                         break
                     try:
                         state = self.discovery.get_device_state(ip)
-                        previous_state = self.device_status_cache.get(ip)
+                        with self._state_lock:
+                            previous_state = self.device_status_cache.get(ip)
 
                         if state is None:
-                            was_online = ip in self.active_ips
-                            self.active_ips.discard(ip)
+                            with self._state_lock:
+                                was_online = ip in self.active_ips
+                                self.active_ips.discard(ip)
+                                if previous_state is not None:
+                                    self.device_status_cache[ip] = None
                             if was_online:
                                 self.log(f"Device {ip} became unreachable.")
                                 state_changed = True
                             if previous_state is not None:
                                 state_changed = True
-                            self.device_status_cache[ip] = None
                         else:
-                            if ip not in self.active_ips:
-                                self.active_ips.add(ip)
-                                state_changed = True
+                            with self._state_lock:
+                                if ip not in self.active_ips:
+                                    self.active_ips.add(ip)
+                                    state_changed = True
+                                if previous_state != state:
+                                    self.device_status_cache[ip] = state
+                                else:
+                                    self.device_status_cache[ip] = state
                             if previous_state != state:
-                                self.device_status_cache[ip] = state
                                 self.log(f"Updated status for {ip}: {'On' if state else 'Off'}")
                                 state_changed = True
-                            else:
-                                self.device_status_cache[ip] = state
                     except Exception as e:
                         self.log(f"Error while updating status for {ip}: {e}")
 
@@ -1053,7 +1187,7 @@ class WizGUI(tk.Tk):
                 if stop_event.wait(5):
                     break
 
-        threading.Thread(target=update, daemon=True).start()
+        self._start_worker(update, "status-poller")
         return stop_event
 
     def on_save_room_name(self, room_id, name_var):
@@ -1062,12 +1196,14 @@ class WizGUI(tk.Tk):
             messagebox.showwarning("Invalid Name", "Please enter a valid room name.")
             return
 
-        self.data["rooms"][room_id] = new_name
-        save_data(self.data)
+        with self._state_lock:
+            self.data["rooms"][room_id] = new_name
+        self._save_data()
         self.log(f"Room {room_id} renamed to {new_name}.")
-        self.refresh_control_frame()
+        self.schedule_refresh()
 
     def on_close(self):
+        self._closing = True
         self.stop_event.set()
         self.destroy()
 

@@ -2,7 +2,8 @@
 import socket
 import json
 import logging
-from typing import List, Tuple, Dict, Optional, Any
+import subprocess
+from typing import List, Tuple, Dict, Optional, Any, Set
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,6 +44,32 @@ class WizDiscovery:
         self.broadcast_address = broadcast_address
         self.broadcast_port = broadcast_port
 
+    def _get_broadcast_addresses(self) -> List[str]:
+        addresses: Set[str] = {self.broadcast_address, "255.255.255.255"}
+
+        try:
+            result = subprocess.run(
+                ["ip", "-j", "-4", "addr", "show", "up"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            interfaces = json.loads(result.stdout)
+        except (subprocess.SubprocessError, json.JSONDecodeError, FileNotFoundError) as exc:
+            logging.warning("Could not inspect network interfaces for broadcast addresses: %s", exc)
+            return sorted(addresses)
+
+        for interface in interfaces:
+            for addr_info in interface.get("addr_info", []):
+                local = addr_info.get("local")
+                broadcast = addr_info.get("broadcast")
+                if local and local.startswith("127."):
+                    continue
+                if broadcast:
+                    addresses.add(broadcast)
+
+        return sorted(addresses)
+
     def discover_wiz_devices(self, timeout: int = 5) -> List[Tuple[str, Dict]]:
         """
         Broadcast a discovery request to WiZ devices and listen for replies.
@@ -53,18 +80,28 @@ class WizDiscovery:
         devices = []
         message = json.dumps({"method": "getSystemConfig", "params": {}}).encode()
 
-        logging.info("Sending discovery message to %s:%d", self.broadcast_address, self.broadcast_port)
+        broadcast_addresses = self._get_broadcast_addresses()
+        logging.info(
+            "Sending discovery message to broadcasts %s on port %d",
+            ", ".join(broadcast_addresses),
+            self.broadcast_port,
+        )
 
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             sock.settimeout(timeout)
             try:
-                sock.sendto(message, (self.broadcast_address, self.broadcast_port))
+                for address in broadcast_addresses:
+                    sock.sendto(message, (address, self.broadcast_port))
                 logging.info("Broadcast sent, waiting for responses...")
+                seen_ips = set()
                 while True:
                     try:
                         data, addr = sock.recvfrom(BUFFER_SIZE)
                         device_info = json.loads(data.decode())
+                        if addr[0] in seen_ips:
+                            continue
+                        seen_ips.add(addr[0])
                         devices.append((addr[0], device_info))
                         logging.info("Received response from %s: %s", addr[0], device_info)
                     except socket.timeout:
