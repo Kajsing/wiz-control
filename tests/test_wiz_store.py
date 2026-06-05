@@ -4,6 +4,7 @@ from pathlib import Path
 from wiz_store import (
     DATA_FILE,
     build_device_record,
+    build_favorite_record,
     build_group_record,
     describe_group,
     normalize_data,
@@ -21,6 +22,7 @@ class WizStoreTests(unittest.TestCase):
 
         self.assertEqual(data["shortcuts"], {})
         self.assertEqual(data["groups"], {})
+        self.assertEqual(data["favorites"], {})
 
     def test_build_device_record_preserves_existing_preferences(self):
         record = build_device_record(
@@ -68,6 +70,28 @@ class WizStoreTests(unittest.TestCase):
                 "devices": ["192.168.1.10"],
             },
         )
+
+    def test_build_favorite_record_normalizes_state_action(self):
+        self.assertEqual(
+            build_favorite_record(" All Off ", "group", " Evening ", False),
+            {
+                "label": "All Off",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "state",
+                "state": False,
+            },
+        )
+
+    def test_build_favorite_record_requires_valid_fields(self):
+        with self.assertRaises(ValueError):
+            build_favorite_record("", "group", "Evening", False)
+        with self.assertRaises(ValueError):
+            build_favorite_record("Evening", "scene", "Evening", False)
+        with self.assertRaises(ValueError):
+            build_favorite_record("Evening", "group", "", False)
+        with self.assertRaises(ValueError):
+            build_favorite_record("Evening", "group", "Evening", "off")
 
     def test_describe_group_uses_room_and_device_labels(self):
         description = describe_group(
@@ -199,6 +223,54 @@ class WizStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(data["groups"], {})
+
+    def test_normalize_data_keeps_valid_favorites(self):
+        data = normalize_data(
+            {
+                "favorites": {
+                    "evening-off": {
+                        "label": "Evening Off",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            data["favorites"]["evening-off"],
+            {
+                "label": "Evening Off",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "state",
+                "state": False,
+            },
+        )
+
+    def test_normalize_data_drops_invalid_favorites(self):
+        data = normalize_data(
+            {
+                "favorites": {
+                    "bad-target": {
+                        "target_type": "scene",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    },
+                    "bad-state": {
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": "off",
+                    },
+                }
+            }
+        )
+
+        self.assertEqual(data["favorites"], {})
 
 
 if __name__ == "__main__":

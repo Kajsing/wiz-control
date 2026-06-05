@@ -6,7 +6,7 @@ import threading
 import time
 
 from wiz_discovery import WizDiscovery
-from wiz_store import DATA_FILE, build_device_record, build_group_record, load_data, save_data
+from wiz_store import DATA_FILE, build_device_record, build_favorite_record, build_group_record, load_data, save_data
 
 
 def _casefold(value):
@@ -77,6 +77,24 @@ def _resolve_shortcut(data, name):
     if len(matches) > 1:
         raise ValueError(f"Shortcut '{name}' matches more than one saved shortcut.")
     raise ValueError(f"Unknown shortcut '{name}'.")
+
+
+def _resolve_favorite(data, name):
+    favorites = data.get("favorites", {})
+    if name in favorites:
+        return name, favorites[name]
+
+    matches = [
+        (favorite_name, favorite)
+        for favorite_name, favorite in favorites.items()
+        if _casefold(favorite_name) == _casefold(name)
+        or _casefold(favorite.get("label", "")) == _casefold(name)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(f"Favorite '{name}' matches more than one saved favorite.")
+    raise ValueError(f"Unknown favorite '{name}'.")
 
 
 def _resolve_group(data, name):
@@ -168,6 +186,19 @@ def _list_groups(data):
             "devices": group.get("devices", []),
         }
         for name, group in sorted(data.get("groups", {}).items())
+    ]
+
+
+def _list_favorites(data):
+    return [
+        {
+            "name": name,
+            "label": favorite.get("label", name),
+            "target_type": favorite["target_type"],
+            "target": favorite["target"],
+            "state": favorite["state"],
+        }
+        for name, favorite in sorted(data.get("favorites", {}).items())
     ]
 
 
@@ -310,6 +341,12 @@ def _print_groups(data):
         print(f"{group['name']}\trooms={rooms}\tdevices={devices}")
 
 
+def _print_favorites(data):
+    for favorite in _list_favorites(data):
+        state = "on" if favorite["state"] else "off"
+        print(f"{favorite['name']}\t{favorite['target_type']}:{favorite['target']}\t{state}")
+
+
 def _print_discovery_progress(stop_event):
     started_at = time.monotonic()
     while not stop_event.wait(1):
@@ -405,6 +442,55 @@ def _run_delete_group(data, data_file, name, json_output=False):
     return 0
 
 
+def _resolve_favorite_target(data, target_type, target):
+    if target_type == "device":
+        return _resolve_device(data, target)["ip"]
+    if target_type == "room":
+        return _resolve_room_id(data, target)
+    if target_type == "group":
+        group_name, _ = _resolve_group(data, target)
+        return group_name
+    raise ValueError("Favorite target type must be device, room, or group.")
+
+
+def _favorite_devices(data, favorite):
+    target_type = favorite["target_type"]
+    target = favorite["target"]
+    if target_type == "device":
+        return [_resolve_device(data, target)]
+    if target_type == "room":
+        return _room_devices(data, target)
+    _, group = _resolve_group(data, target)
+    return _group_devices(data, group)
+
+
+def _run_save_favorite(data, data_file, name, target_type, target, state, json_output=False):
+    resolved_target = _resolve_favorite_target(data, target_type, target)
+    favorite = build_favorite_record(name, target_type, resolved_target, state == "on")
+    favorite_name = favorite["label"]
+    data.setdefault("favorites", {})[favorite_name] = favorite
+    save_data(data, data_file)
+
+    if json_output:
+        _print_json({"ok": True, "favorite": favorite})
+    else:
+        print(f"Saved favorite '{favorite_name}'.")
+        print(f"target={favorite['target_type']}:{favorite['target']}")
+        print(f"state={'on' if favorite['state'] else 'off'}")
+    return 0
+
+
+def _run_delete_favorite(data, data_file, name, json_output=False):
+    favorite_name, _ = _resolve_favorite(data, name)
+    del data["favorites"][favorite_name]
+    save_data(data, data_file)
+    if json_output:
+        _print_json({"ok": True, "deleted": favorite_name})
+    else:
+        print(f"Deleted favorite '{favorite_name}'.")
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Control saved WiZ devices from the command line.")
     parser.add_argument("--data-file", default=DATA_FILE, help="Path to wiz_data.json.")
@@ -423,8 +509,8 @@ def build_parser():
     discover_parser = subparsers.add_parser("discover", help="Discover WiZ devices and save them for CLI and GUI use.")
     discover_parser.add_argument("--timeout", type=int, default=10, help="Discovery listen timeout in seconds.")
 
-    list_parser = subparsers.add_parser("list", help="List saved devices, rooms, shortcuts, or groups.")
-    list_parser.add_argument("kind", choices=("devices", "rooms", "shortcuts", "groups"))
+    list_parser = subparsers.add_parser("list", help="List saved devices, rooms, shortcuts, groups, or favorites.")
+    list_parser.add_argument("kind", choices=("devices", "rooms", "shortcuts", "groups", "favorites"))
 
     device_parser = subparsers.add_parser("device", help="Turn one saved device on or off.")
     device_parser.add_argument("target", help="Device IP address or unique module name.")
@@ -450,6 +536,18 @@ def build_parser():
     delete_group_parser = subparsers.add_parser("delete-group", help="Delete a saved group.")
     delete_group_parser.add_argument("name", help="Group name.")
 
+    save_favorite_parser = subparsers.add_parser("save-favorite", help="Create or replace a favorite quick action.")
+    save_favorite_parser.add_argument("name", help="Favorite name.")
+    save_favorite_parser.add_argument("target_type", choices=("device", "room", "group"))
+    save_favorite_parser.add_argument("target", help="Device, room, or group name/identifier.")
+    save_favorite_parser.add_argument("state", choices=("on", "off"))
+
+    delete_favorite_parser = subparsers.add_parser("delete-favorite", help="Delete a saved favorite quick action.")
+    delete_favorite_parser.add_argument("name", help="Favorite name.")
+
+    favorite_parser = subparsers.add_parser("favorite", help="Run a saved favorite quick action.")
+    favorite_parser.add_argument("name", help="Favorite name.")
+
     shortcut_parser = subparsers.add_parser("shortcut", help="Run a shortcut saved from the GUI.")
     shortcut_parser.add_argument("name", help="Shortcut name.")
 
@@ -467,6 +565,7 @@ def run_command(args, discovery=None):
                 "rooms": _list_rooms,
                 "shortcuts": _list_shortcuts,
                 "groups": _list_groups,
+                "favorites": _list_favorites,
             }
             _print_json({"ok": True, "kind": args.kind, args.kind: list_payloads[args.kind](data)})
         elif args.kind == "devices":
@@ -475,6 +574,8 @@ def run_command(args, discovery=None):
             _print_rooms(data)
         elif args.kind == "shortcuts":
             _print_shortcuts(data)
+        elif args.kind == "favorites":
+            _print_favorites(data)
         else:
             _print_groups(data)
         return 0
@@ -516,6 +617,30 @@ def run_command(args, discovery=None):
 
     if args.command == "delete-group":
         return _run_delete_group(data, args.data_file, args.name, json_output=args.json_output)
+
+    if args.command == "save-favorite":
+        return _run_save_favorite(
+            data,
+            args.data_file,
+            args.name,
+            args.target_type,
+            args.target,
+            args.state,
+            json_output=args.json_output,
+        )
+
+    if args.command == "delete-favorite":
+        return _run_delete_favorite(data, args.data_file, args.name, json_output=args.json_output)
+
+    if args.command == "favorite":
+        _, favorite = _resolve_favorite(data, args.name)
+        return _send_state(
+            discovery,
+            _favorite_devices(data, favorite),
+            favorite["state"],
+            args.command_timeout,
+            json_output=args.json_output,
+        )
 
     if args.command == "shortcut":
         _, shortcut = _resolve_shortcut(data, args.name)

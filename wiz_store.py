@@ -157,6 +157,38 @@ def _normalize_groups(raw_groups):
     return normalized
 
 
+def _normalize_favorites(raw_favorites):
+    normalized = {}
+    if not isinstance(raw_favorites, dict):
+        return normalized
+
+    for name, favorite in raw_favorites.items():
+        if not isinstance(favorite, dict):
+            continue
+
+        normalized_name = str(name).strip()
+        target_type = favorite.get("target_type")
+        target = favorite.get("target")
+        action = favorite.get("action")
+
+        if not normalized_name or target_type not in {"device", "room", "group"}:
+            continue
+        if not target or action != "state":
+            continue
+        if not isinstance(favorite.get("state"), bool):
+            continue
+
+        normalized[normalized_name] = {
+            "label": str(favorite.get("label") or normalized_name).strip() or normalized_name,
+            "target_type": target_type,
+            "target": str(target),
+            "action": "state",
+            "state": favorite["state"],
+        }
+
+    return normalized
+
+
 def build_group_record(name, rooms, devices):
     group_name = str(name).strip()
     room_ids = [str(room).strip() for room in rooms if str(room).strip()]
@@ -171,6 +203,29 @@ def build_group_record(name, rooms, devices):
         "label": group_name,
         "rooms": room_ids,
         "devices": device_ips,
+    }
+
+
+def build_favorite_record(name, target_type, target, state):
+    favorite_name = str(name).strip()
+    target_type = str(target_type).strip()
+    target = str(target).strip()
+
+    if not favorite_name:
+        raise ValueError("Favorite name cannot be empty.")
+    if target_type not in {"device", "room", "group"}:
+        raise ValueError("Favorite target type must be device, room, or group.")
+    if not target:
+        raise ValueError("Favorite target cannot be empty.")
+    if not isinstance(state, bool):
+        raise ValueError("Favorite state must be a boolean.")
+
+    return {
+        "label": favorite_name,
+        "target_type": target_type,
+        "target": target,
+        "action": "state",
+        "state": state,
     }
 
 
@@ -270,6 +325,7 @@ def _empty_data():
         "room_settings": {},
         "shortcuts": {},
         "groups": {},
+        "favorites": {},
     }
 
 
@@ -282,6 +338,7 @@ def normalize_data(data):
     data["devices"] = _normalize_device_records(data.get("devices", {}))
     data["shortcuts"] = _normalize_shortcuts(data.get("shortcuts", {}))
     data["groups"] = _normalize_groups(data.get("groups", {}))
+    data["favorites"] = _normalize_favorites(data.get("favorites", {}))
 
     for record in data["devices"].values():
         if not isinstance(record.get("preferences"), dict):

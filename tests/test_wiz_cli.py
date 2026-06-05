@@ -408,6 +408,120 @@ class WizCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("office-on\troom:1\ton", output.getvalue())
 
+    def test_save_favorite_resolves_group_target(self):
+        data_file = self.write_data(
+            {
+                "groups": {
+                    "Evening": {
+                        "label": "Evening",
+                        "rooms": ["1"],
+                        "devices": [],
+                    }
+                }
+            }
+        )
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "save-favorite", "Evening Off", "group", "Evening", "off"]
+        )
+
+        saved = json.loads(data_file.read_text())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            saved["favorites"]["Evening Off"],
+            {
+                "label": "Evening Off",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "state",
+                "state": False,
+            },
+        )
+
+    def test_list_favorites_prints_saved_favorites(self):
+        data_file = self.write_data(
+            {
+                "favorites": {
+                    "Evening Off": {
+                        "label": "Evening Off",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    }
+                }
+            }
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = wiz_cli.main(["--data-file", str(data_file), "list", "favorites"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Evening Off\tgroup:Evening\toff", output.getvalue())
+
+    def test_favorite_command_targets_saved_group(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}},
+                    "192.168.1.11": {"moduleName": "Shelf Lamp", "roomId": "1", "info": {}},
+                },
+                "groups": {
+                    "Evening": {
+                        "label": "Evening",
+                        "rooms": ["1"],
+                        "devices": [],
+                    }
+                },
+                "favorites": {
+                    "Evening Off": {
+                        "label": "Evening Off",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    }
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "favorite", "Evening Off"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "setState", {"state": False}, 2),
+                ("192.168.1.11", "setState", {"state": False}, 2),
+            ],
+        )
+
+    def test_delete_favorite_removes_saved_favorite(self):
+        data_file = self.write_data(
+            {
+                "favorites": {
+                    "Evening Off": {
+                        "label": "Evening Off",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    }
+                }
+            }
+        )
+
+        exit_code = self.run_cli(["--data-file", str(data_file), "delete-favorite", "Evening Off"])
+
+        saved = json.loads(data_file.read_text())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(saved["favorites"], {})
+
     def test_discover_saves_devices_and_uses_default_timeout(self):
         data_file = self.write_data(
             {
