@@ -74,7 +74,11 @@ Activate the virtual environment:
 
 ### Install Dependencies
 
-This project currently relies only on the Python standard library. If you maintain shared tooling for linting or testing, pin it in `requirements-dev.txt`.
+Install optional Windows companion dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
 
 **Tkinter note:** If `tkinter` is missing when you launch the app, install the platform package:
 
@@ -101,13 +105,19 @@ py wiz_cli.py list devices
 py wiz_cli.py list rooms
 py wiz_cli.py list shortcuts
 py wiz_cli.py list groups
+py wiz_cli.py list favorites
 py wiz_cli.py discover
 py wiz_cli.py discover --timeout 15
+py wiz_cli.py status device "Desk Lamp"
+py wiz_cli.py --json status room "Living Room"
 py wiz_cli.py device "192.168.87.10" on
 py wiz_cli.py room "Living Room" off
 py wiz_cli.py save-group "Group 1" --room "Living Room" --device "Desk Lamp"
 py wiz_cli.py group "Group 1" on
 py wiz_cli.py delete-group "Group 1"
+py wiz_cli.py save-favorite "Movie Off" group "Movie Lights" off
+py wiz_cli.py favorite "Movie Off"
+py wiz_cli.py export-shortcut favorite "Movie Off" --output-dir "$env:USERPROFILE\Desktop"
 py wiz_cli.py shortcut "Desk Lamp On"
 ```
 
@@ -124,11 +134,33 @@ Groups combine whole rooms and individual devices. A group can turn on every
 light in one room plus a single lamp from another room, and duplicate devices
 are only controlled once.
 
+Favorites are curated quick actions intended for the Windows companion and
+shortcut exports. They can target a device, room, or group and store an on/off
+state. Use `--json` before the command when another tool needs machine-readable
+output.
+
 For a Windows taskbar shortcut, set the shortcut target to a command like:
 
 ```powershell
 py "C:\project\wiz-control\wiz_cli.py" shortcut "Desk Lamp On"
 ```
+
+Or generate a `.lnk` file from a saved favorite or shortcut:
+
+```powershell
+py wiz_cli.py export-shortcut favorite "Movie Off" --output-dir "$env:USERPROFILE\Desktop"
+```
+
+### Windows Companion
+
+Run the tray companion after installing `requirements.txt`:
+
+```bash
+py wiz_tray.py
+```
+
+The companion shows quick menu actions for **All Off**, favorites, groups, and
+rooms. The full GUI remains the setup surface for discovery and editing.
 
 ### Using the Application
 
@@ -195,6 +227,15 @@ The application writes a `wiz_data.json` file alongside the scripts to remember 
       "rooms": ["1"],
       "devices": ["192.168.87.10"]
     }
+  },
+  "favorites": {
+    "Movie Off": {
+      "label": "Movie Off",
+      "target_type": "group",
+      "target": "Group 1",
+      "action": "state",
+      "state": false
+    }
   }
 }
 ```
@@ -205,7 +246,9 @@ You can safely delete this file to reset the cache. The application will regener
 
 - **GUI (`wiz_gui.py`)** manages Tkinter widgets, cached discovery data, and background polling threads. Device state changes update an in-memory cache before triggering lightweight UI refreshes.
 - **Discovery (`wiz_discovery.py`)** encapsulates UDP broadcast discovery, per-device command calls, and room grouping helpers. Network access is deliberately serialized in the status poller to avoid saturating the WiZ protocol.
-- **CLI (`wiz_cli.py`)** exposes saved devices, rooms, and GUI-defined shortcuts for scripts, shell aliases, and Windows shortcuts.
+- **CLI (`wiz_cli.py`)** exposes saved devices, rooms, groups, favorites, status reads, JSON output, and Windows shortcut exports for scripts and shell aliases.
+- **Companion (`wiz_tray.py`)** provides an optional Windows tray menu for daily quick actions.
+- **Windows Shortcuts (`wiz_windows_shortcuts.py`)** creates `.lnk` files that call back into the CLI.
 - **Data Store (`wiz_store.py`)** centralizes `wiz_data.json` loading, normalization, and atomic writes for both GUI and CLI entry points.
 - **Contributor Guide**: See [`AGENTS.md`](AGENTS.md) for coding standards, testing guidance, and pull-request expectations tailored to this project.
 
