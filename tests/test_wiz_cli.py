@@ -522,6 +522,43 @@ class WizCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(saved["favorites"], {})
 
+    def test_export_shortcut_creates_windows_shortcut_for_favorite(self):
+        data_file = self.write_data(
+            {
+                "favorites": {
+                    "Evening Off": {
+                        "label": "Evening Off",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "state",
+                        "state": False,
+                    }
+                }
+            }
+        )
+        created_plans = []
+        original_create_shortcut = wiz_cli.create_windows_shortcut
+        wiz_cli.create_windows_shortcut = created_plans.append
+        self.addCleanup(setattr, wiz_cli, "create_windows_shortcut", original_create_shortcut)
+
+        exit_code = self.run_cli(
+            [
+                "--data-file",
+                str(data_file),
+                "export-shortcut",
+                "favorite",
+                "Evening Off",
+                "--output-dir",
+                str(data_file.parent),
+            ]
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(created_plans), 1)
+        self.assertEqual(Path(created_plans[0]["path"]).name, "Evening Off.lnk")
+        self.assertIn('"favorite"', created_plans[0]["arguments"])
+        self.assertIn('"Evening Off"', created_plans[0]["arguments"])
+
     def test_discover_saves_devices_and_uses_default_timeout(self):
         data_file = self.write_data(
             {

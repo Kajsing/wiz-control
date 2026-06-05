@@ -7,6 +7,7 @@ import time
 
 from wiz_discovery import WizDiscovery
 from wiz_store import DATA_FILE, build_device_record, build_favorite_record, build_group_record, load_data, save_data
+from wiz_windows_shortcuts import build_cli_shortcut_plan, create_windows_shortcut
 
 
 def _casefold(value):
@@ -491,6 +492,24 @@ def _run_delete_favorite(data, data_file, name, json_output=False):
     return 0
 
 
+def _run_export_shortcut(data, kind, name, output_dir, json_output=False):
+    if kind == "favorite":
+        action_name, _ = _resolve_favorite(data, name)
+        command = ["favorite", action_name]
+    else:
+        action_name, _ = _resolve_shortcut(data, name)
+        command = ["shortcut", action_name]
+
+    plan = build_cli_shortcut_plan(action_name, command, output_dir)
+    create_windows_shortcut(plan)
+
+    if json_output:
+        _print_json({"ok": True, "shortcut": plan})
+    else:
+        print(f"Created Windows shortcut: {plan['path']}")
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description="Control saved WiZ devices from the command line.")
     parser.add_argument("--data-file", default=DATA_FILE, help="Path to wiz_data.json.")
@@ -547,6 +566,11 @@ def build_parser():
 
     favorite_parser = subparsers.add_parser("favorite", help="Run a saved favorite quick action.")
     favorite_parser.add_argument("name", help="Favorite name.")
+
+    export_shortcut_parser = subparsers.add_parser("export-shortcut", help="Create a Windows .lnk for a saved shortcut or favorite.")
+    export_shortcut_parser.add_argument("kind", choices=("shortcut", "favorite"))
+    export_shortcut_parser.add_argument("name", help="Saved shortcut or favorite name.")
+    export_shortcut_parser.add_argument("--output-dir", default=".", help="Directory where the .lnk file should be created.")
 
     shortcut_parser = subparsers.add_parser("shortcut", help="Run a shortcut saved from the GUI.")
     shortcut_parser.add_argument("name", help="Shortcut name.")
@@ -642,6 +666,9 @@ def run_command(args, discovery=None):
             json_output=args.json_output,
         )
 
+    if args.command == "export-shortcut":
+        return _run_export_shortcut(data, args.kind, args.name, args.output_dir, json_output=args.json_output)
+
     if args.command == "shortcut":
         _, shortcut = _resolve_shortcut(data, args.name)
         if shortcut["target_type"] == "device":
@@ -660,7 +687,7 @@ def main(argv=None, discovery=None):
     args = parser.parse_args(argv)
     try:
         return run_command(args, discovery=discovery)
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+    except (FileNotFoundError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
