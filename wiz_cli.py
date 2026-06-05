@@ -118,19 +118,87 @@ def _group_devices(data, group):
     return devices
 
 
-def _send_state(discovery, devices, state, timeout):
+def _print_json(payload):
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _list_devices(data):
+    return [
+        {
+            "ip": ip,
+            "name": record.get("moduleName", f"Device {ip}"),
+            "room_id": str(record.get("roomId", "Unknown")),
+        }
+        for ip, record in sorted(data.get("devices", {}).items())
+    ]
+
+
+def _list_rooms(data):
+    room_ids = {str(record.get("roomId", "Unknown")) for record in data.get("devices", {}).values()}
+    room_ids.update(str(room_id) for room_id in data.get("rooms", {}))
+    return [
+        {
+            "id": room_id,
+            "name": _room_label(data, room_id),
+            "devices": len(_room_devices(data, room_id)),
+        }
+        for room_id in sorted(room_ids)
+    ]
+
+
+def _list_shortcuts(data):
+    return [
+        {
+            "name": name,
+            "label": shortcut.get("label", name),
+            "target_type": shortcut["target_type"],
+            "target": shortcut["target"],
+            "state": shortcut["state"],
+        }
+        for name, shortcut in sorted(data.get("shortcuts", {}).items())
+    ]
+
+
+def _list_groups(data):
+    return [
+        {
+            "name": name,
+            "label": group.get("label", name),
+            "rooms": group.get("rooms", []),
+            "devices": group.get("devices", []),
+        }
+        for name, group in sorted(data.get("groups", {}).items())
+    ]
+
+
+def _send_state(discovery, devices, state, timeout, json_output=False):
     if not devices:
         raise ValueError("No devices matched the command.")
 
     failures = []
+    results = []
     for device in devices:
         ip = device["ip"]
         response = discovery.send_command(ip, "setState", {"state": state}, timeout=timeout)
         if response:
-            print(f"{ip}: {'on' if state else 'off'}")
+            results.append({"ip": ip, "ok": True, "state": "on" if state else "off"})
+            if not json_output:
+                print(f"{ip}: {'on' if state else 'off'}")
         else:
             failures.append(ip)
-            print(f"{ip}: failed", file=sys.stderr)
+            results.append({"ip": ip, "ok": False, "state": "on" if state else "off"})
+            if not json_output:
+                print(f"{ip}: failed", file=sys.stderr)
+
+    if json_output:
+        _print_json(
+            {
+                "ok": not failures,
+                "action": "state",
+                "state": "on" if state else "off",
+                "devices": results,
+            }
+        )
 
     return 0 if not failures else 1
 
@@ -169,10 +237,15 @@ def _print_status(statuses, data):
         )
 
 
-def _print_status_summary(statuses):
+def _status_summary(statuses):
     counts = {"on": 0, "off": 0, "offline": 0, "unknown": 0}
     for status in statuses:
         counts[status["status"]] += 1
+    return counts
+
+
+def _print_status_summary(statuses):
+    counts = _status_summary(statuses)
     print(
         "summary\t"
         f"on={counts['on']}\t"
@@ -182,7 +255,7 @@ def _print_status_summary(statuses):
     )
 
 
-def _run_status(data, discovery, kind, target, timeout):
+def _run_status(data, discovery, kind, target, timeout, json_output=False):
     if kind == "device":
         devices = [_resolve_device(data, target)]
     elif kind == "room":
@@ -196,38 +269,45 @@ def _run_status(data, discovery, kind, target, timeout):
         raise ValueError("No devices matched the status command.")
 
     statuses = [_read_device_status(discovery, device, timeout) for device in devices]
-    _print_status(statuses, data)
-    if len(statuses) > 1:
-        _print_status_summary(statuses)
-    return 0 if all(status["online"] for status in statuses) else 1
+    ok = all(status["online"] for status in statuses)
+    if json_output:
+        _print_json(
+            {
+                "ok": ok,
+                "kind": kind,
+                "target": target,
+                "devices": statuses,
+                "summary": _status_summary(statuses),
+            }
+        )
+    else:
+        _print_status(statuses, data)
+        if len(statuses) > 1:
+            _print_status_summary(statuses)
+    return 0 if ok else 1
 
 
 def _print_devices(data):
-    for ip, record in sorted(data.get("devices", {}).items()):
-        print(f"{ip}\t{record.get('moduleName', f'Device {ip}')}\troom={record.get('roomId', 'Unknown')}")
+    for device in _list_devices(data):
+        print(f"{device['ip']}\t{device['name']}\troom={device['room_id']}")
 
 
 def _print_rooms(data):
-    room_ids = {str(record.get("roomId", "Unknown")) for record in data.get("devices", {}).values()}
-    room_ids.update(str(room_id) for room_id in data.get("rooms", {}))
-    for room_id in sorted(room_ids):
-        devices = _room_devices(data, room_id)
-        print(f"{room_id}\t{_room_label(data, room_id)}\tdevices={len(devices)}")
+    for room in _list_rooms(data):
+        print(f"{room['id']}\t{room['name']}\tdevices={room['devices']}")
 
 
 def _print_shortcuts(data):
-    for name, shortcut in sorted(data.get("shortcuts", {}).items()):
-        target_type = shortcut["target_type"]
-        target = shortcut["target"]
+    for shortcut in _list_shortcuts(data):
         state = "on" if shortcut["state"] else "off"
-        print(f"{name}\t{target_type}:{target}\t{state}")
+        print(f"{shortcut['name']}\t{shortcut['target_type']}:{shortcut['target']}\t{state}")
 
 
 def _print_groups(data):
-    for name, group in sorted(data.get("groups", {}).items()):
-        rooms = ",".join(group.get("rooms", [])) or "-"
-        devices = ",".join(group.get("devices", [])) or "-"
-        print(f"{name}\trooms={rooms}\tdevices={devices}")
+    for group in _list_groups(data):
+        rooms = ",".join(group["rooms"]) or "-"
+        devices = ",".join(group["devices"]) or "-"
+        print(f"{group['name']}\trooms={rooms}\tdevices={devices}")
 
 
 def _print_discovery_progress(stop_event):
@@ -261,24 +341,36 @@ def _save_discovered_devices(data, discovered):
         data["devices"][ip] = build_device_record(ip, info, existing)
 
 
-def _run_discover(data, data_file, discovery, timeout):
+def _run_discover(data, data_file, discovery, timeout, json_output=False):
     discovered = _discover_with_progress(discovery, timeout)
     if not discovered:
-        print("No WiZ devices found.")
+        if json_output:
+            _print_json({"ok": False, "devices": []})
+        else:
+            print("No WiZ devices found.")
         return 1
 
     _save_discovered_devices(data, discovered)
     save_data(data, data_file)
 
-    print(f"Found and saved {len(discovered)} WiZ device(s).")
-    _print_devices(data)
-    print()
-    print("Rooms:")
-    _print_rooms(data)
+    if json_output:
+        _print_json(
+            {
+                "ok": True,
+                "devices": _list_devices(data),
+                "rooms": _list_rooms(data),
+            }
+        )
+    else:
+        print(f"Found and saved {len(discovered)} WiZ device(s).")
+        _print_devices(data)
+        print()
+        print("Rooms:")
+        _print_rooms(data)
     return 0
 
 
-def _run_save_group(data, data_file, name, rooms, devices):
+def _run_save_group(data, data_file, name, rooms, devices, json_output=False):
     group_name = name.strip()
     if not group_name:
         raise ValueError("Group name cannot be empty.")
@@ -293,23 +385,30 @@ def _run_save_group(data, data_file, name, rooms, devices):
     }
     save_data(data, data_file)
 
-    print(f"Saved group '{group_name}'.")
-    print(f"rooms={','.join(room_ids) or '-'}")
-    print(f"devices={','.join(device_ips) or '-'}")
+    if json_output:
+        _print_json({"ok": True, "group": data["groups"][group_name]})
+    else:
+        print(f"Saved group '{group_name}'.")
+        print(f"rooms={','.join(room_ids) or '-'}")
+        print(f"devices={','.join(device_ips) or '-'}")
     return 0
 
 
-def _run_delete_group(data, data_file, name):
+def _run_delete_group(data, data_file, name, json_output=False):
     group_name, _ = _resolve_group(data, name)
     del data["groups"][group_name]
     save_data(data, data_file)
-    print(f"Deleted group '{group_name}'.")
+    if json_output:
+        _print_json({"ok": True, "deleted": group_name})
+    else:
+        print(f"Deleted group '{group_name}'.")
     return 0
 
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Control saved WiZ devices from the command line.")
     parser.add_argument("--data-file", default=DATA_FILE, help="Path to wiz_data.json.")
+    parser.add_argument("--json", dest="json_output", action="store_true", help="Print machine-readable JSON output.")
     parser.add_argument(
         "--timeout",
         dest="command_timeout",
@@ -362,7 +461,15 @@ def run_command(args, discovery=None):
     discovery = discovery or WizDiscovery()
 
     if args.command == "list":
-        if args.kind == "devices":
+        if args.json_output:
+            list_payloads = {
+                "devices": _list_devices,
+                "rooms": _list_rooms,
+                "shortcuts": _list_shortcuts,
+                "groups": _list_groups,
+            }
+            _print_json({"ok": True, "kind": args.kind, args.kind: list_payloads[args.kind](data)})
+        elif args.kind == "devices":
             _print_devices(data)
         elif args.kind == "rooms":
             _print_rooms(data)
@@ -375,28 +482,40 @@ def run_command(args, discovery=None):
     if args.command == "discover":
         if args.timeout <= 0:
             raise ValueError("Discovery timeout must be greater than zero.")
-        return _run_discover(data, args.data_file, discovery, args.timeout)
+        return _run_discover(data, args.data_file, discovery, args.timeout, json_output=args.json_output)
 
     if args.command == "device":
         device = _resolve_device(data, args.target)
-        return _send_state(discovery, [device], args.state == "on", args.command_timeout)
+        return _send_state(discovery, [device], args.state == "on", args.command_timeout, json_output=args.json_output)
 
     if args.command == "room":
         room_id = _resolve_room_id(data, args.target)
-        return _send_state(discovery, _room_devices(data, room_id), args.state == "on", args.command_timeout)
+        return _send_state(
+            discovery,
+            _room_devices(data, room_id),
+            args.state == "on",
+            args.command_timeout,
+            json_output=args.json_output,
+        )
 
     if args.command == "group":
         _, group = _resolve_group(data, args.target)
-        return _send_state(discovery, _group_devices(data, group), args.state == "on", args.command_timeout)
+        return _send_state(
+            discovery,
+            _group_devices(data, group),
+            args.state == "on",
+            args.command_timeout,
+            json_output=args.json_output,
+        )
 
     if args.command == "status":
-        return _run_status(data, discovery, args.kind, args.target, args.command_timeout)
+        return _run_status(data, discovery, args.kind, args.target, args.command_timeout, json_output=args.json_output)
 
     if args.command == "save-group":
-        return _run_save_group(data, args.data_file, args.name, args.room, args.device)
+        return _run_save_group(data, args.data_file, args.name, args.room, args.device, json_output=args.json_output)
 
     if args.command == "delete-group":
-        return _run_delete_group(data, args.data_file, args.name)
+        return _run_delete_group(data, args.data_file, args.name, json_output=args.json_output)
 
     if args.command == "shortcut":
         _, shortcut = _resolve_shortcut(data, args.name)
@@ -405,7 +524,7 @@ def run_command(args, discovery=None):
             devices = [device]
         else:
             devices = _room_devices(data, shortcut["target"])
-        return _send_state(discovery, devices, shortcut["state"], args.command_timeout)
+        return _send_state(discovery, devices, shortcut["state"], args.command_timeout, json_output=args.json_output)
 
     raise ValueError(f"Unknown command '{args.command}'.")
 

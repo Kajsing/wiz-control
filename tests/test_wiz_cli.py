@@ -70,6 +70,31 @@ class WizCliTests(unittest.TestCase):
             [("192.168.1.10", "setState", {"state": False}, 2)],
         )
 
+    def test_device_command_can_print_json(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {
+                        "moduleName": "Desk Lamp",
+                        "roomId": "1",
+                        "info": {},
+                    }
+                }
+            }
+        )
+        discovery = FakeDiscovery()
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "--json", "device", "Desk Lamp", "on"],
+            discovery=discovery,
+        )
+
+        payload = json.loads(stdout)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["state"], "on")
+        self.assertEqual(payload["devices"][0]["ip"], "192.168.1.10")
+
     def test_room_command_targets_all_devices_in_room(self):
         data_file = self.write_data(
             {
@@ -187,6 +212,29 @@ class WizCliTests(unittest.TestCase):
         self.assertIn("192.168.1.10\tDesk Lamp\troom=Office\tstatus=off", stdout)
         self.assertEqual(discovery.commands, [("192.168.1.10", "getPilot", {}, 2)])
 
+    def test_status_device_can_print_json(self):
+        data_file = self.write_data(
+            {
+                "rooms": {"1": "Office"},
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}}
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {"192.168.1.10": {"result": {"state": True}}}
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "--json", "status", "device", "Desk Lamp"],
+            discovery=discovery,
+        )
+
+        payload = json.loads(stdout)
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["devices"][0]["status"], "on")
+        self.assertEqual(payload["summary"], {"on": 1, "off": 0, "offline": 0, "unknown": 0})
+
     def test_status_room_prints_summary(self):
         data_file = self.write_data(
             {
@@ -263,6 +311,31 @@ class WizCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("Group 1\trooms=1\tdevices=192.168.1.12", output.getvalue())
+
+    def test_list_devices_can_print_json(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {
+                        "moduleName": "Desk Lamp",
+                        "roomId": "1",
+                        "info": {},
+                    }
+                }
+            }
+        )
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "--json", "list", "devices"]
+        )
+
+        payload = json.loads(stdout)
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["kind"], "devices")
+        self.assertEqual(
+            payload["devices"],
+            [{"ip": "192.168.1.10", "name": "Desk Lamp", "room_id": "1"}],
+        )
 
     def test_delete_group_removes_saved_group(self):
         data_file = self.write_data(
