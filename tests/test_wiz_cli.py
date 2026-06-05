@@ -13,9 +13,12 @@ class FakeDiscovery:
         self.commands = []
         self.discovered = []
         self.discovery_timeouts = []
+        self.pilot_responses = {}
 
     def send_command(self, ip, method, params, timeout=2):
         self.commands.append((ip, method, params, timeout))
+        if method == "getPilot":
+            return self.pilot_responses.get(ip, {"result": {"state": True}})
         return {"result": {"success": True}}
 
     def discover_wiz_devices(self, timeout=5):
@@ -34,6 +37,13 @@ class WizCliTests(unittest.TestCase):
     def run_cli(self, argv, discovery=None):
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
             return wiz_cli.main(argv, discovery=discovery)
+
+    def capture_cli(self, argv, discovery=None):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = wiz_cli.main(argv, discovery=discovery)
+        return exit_code, stdout.getvalue(), stderr.getvalue()
 
     def test_device_command_targets_saved_ip(self):
         data_file = self.write_data(
@@ -155,6 +165,84 @@ class WizCliTests(unittest.TestCase):
                 ("192.168.1.12", "setState", {"state": True}, 2),
             ],
         )
+
+    def test_status_device_prints_current_state(self):
+        data_file = self.write_data(
+            {
+                "rooms": {"1": "Office"},
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}}
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {"192.168.1.10": {"result": {"state": False}}}
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "status", "device", "Desk Lamp"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("192.168.1.10\tDesk Lamp\troom=Office\tstatus=off", stdout)
+        self.assertEqual(discovery.commands, [("192.168.1.10", "getPilot", {}, 2)])
+
+    def test_status_room_prints_summary(self):
+        data_file = self.write_data(
+            {
+                "rooms": {"1": "Office"},
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}},
+                    "192.168.1.11": {"moduleName": "Shelf Lamp", "roomId": "1", "info": {}},
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {
+            "192.168.1.10": {"result": {"state": True}},
+            "192.168.1.11": {"result": {"state": False}},
+        }
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "status", "room", "Office"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("192.168.1.10\tDesk Lamp\troom=Office\tstatus=on", stdout)
+        self.assertIn("192.168.1.11\tShelf Lamp\troom=Office\tstatus=off", stdout)
+        self.assertIn("summary\ton=1\toff=1\toffline=0\tunknown=0", stdout)
+
+    def test_status_group_returns_failure_when_a_device_is_offline(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}},
+                    "192.168.1.11": {"moduleName": "Shelf Lamp", "roomId": "1", "info": {}},
+                },
+                "groups": {
+                    "Work": {
+                        "label": "Work",
+                        "rooms": [],
+                        "devices": ["192.168.1.10", "192.168.1.11"],
+                    }
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {
+            "192.168.1.10": {"result": {"state": True}},
+            "192.168.1.11": None,
+        }
+
+        exit_code, stdout, _ = self.capture_cli(
+            ["--data-file", str(data_file), "status", "group", "Work"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("192.168.1.11\tShelf Lamp\troom=Room 1\tstatus=offline", stdout)
+        self.assertIn("summary\ton=1\toff=0\toffline=1\tunknown=0", stdout)
 
     def test_list_groups_prints_saved_groups(self):
         data_file = self.write_data(

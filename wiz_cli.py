@@ -135,6 +135,73 @@ def _send_state(discovery, devices, state, timeout):
     return 0 if not failures else 1
 
 
+def _read_device_status(discovery, device, timeout):
+    ip = device["ip"]
+    response = discovery.send_command(ip, "getPilot", {}, timeout=timeout)
+    result = response.get("result", {}) if isinstance(response, dict) else {}
+    state = result.get("state")
+
+    if response is None:
+        status = "offline"
+    elif state is True:
+        status = "on"
+    elif state is False:
+        status = "off"
+    else:
+        status = "unknown"
+
+    return {
+        "ip": ip,
+        "name": device.get("moduleName", f"Device {ip}"),
+        "room_id": str(device.get("roomId", "Unknown")),
+        "online": response is not None,
+        "state": state if isinstance(state, bool) else None,
+        "status": status,
+    }
+
+
+def _print_status(statuses, data):
+    for status in statuses:
+        room_label = _room_label(data, status["room_id"])
+        print(
+            f"{status['ip']}\t{status['name']}\t"
+            f"room={room_label}\tstatus={status['status']}"
+        )
+
+
+def _print_status_summary(statuses):
+    counts = {"on": 0, "off": 0, "offline": 0, "unknown": 0}
+    for status in statuses:
+        counts[status["status"]] += 1
+    print(
+        "summary\t"
+        f"on={counts['on']}\t"
+        f"off={counts['off']}\t"
+        f"offline={counts['offline']}\t"
+        f"unknown={counts['unknown']}"
+    )
+
+
+def _run_status(data, discovery, kind, target, timeout):
+    if kind == "device":
+        devices = [_resolve_device(data, target)]
+    elif kind == "room":
+        room_id = _resolve_room_id(data, target)
+        devices = _room_devices(data, room_id)
+    else:
+        _, group = _resolve_group(data, target)
+        devices = _group_devices(data, group)
+
+    if not devices:
+        raise ValueError("No devices matched the status command.")
+
+    statuses = [_read_device_status(discovery, device, timeout) for device in devices]
+    _print_status(statuses, data)
+    if len(statuses) > 1:
+        _print_status_summary(statuses)
+    return 0 if all(status["online"] for status in statuses) else 1
+
+
 def _print_devices(data):
     for ip, record in sorted(data.get("devices", {}).items()):
         print(f"{ip}\t{record.get('moduleName', f'Device {ip}')}\troom={record.get('roomId', 'Unknown')}")
@@ -272,6 +339,10 @@ def build_parser():
     group_parser.add_argument("target", help="Saved group name.")
     group_parser.add_argument("state", choices=("on", "off"))
 
+    status_parser = subparsers.add_parser("status", help="Read current status for a saved device, room, or group.")
+    status_parser.add_argument("kind", choices=("device", "room", "group"))
+    status_parser.add_argument("target", help="Device, room, or group name/identifier.")
+
     save_group_parser = subparsers.add_parser("save-group", help="Create or replace a group of rooms and devices.")
     save_group_parser.add_argument("name", help="Group name.")
     save_group_parser.add_argument("--room", action="append", default=[], help="Room ID or unique room name. Can be repeated.")
@@ -317,6 +388,9 @@ def run_command(args, discovery=None):
     if args.command == "group":
         _, group = _resolve_group(data, args.target)
         return _send_state(discovery, _group_devices(data, group), args.state == "on", args.command_timeout)
+
+    if args.command == "status":
+        return _run_status(data, discovery, args.kind, args.target, args.command_timeout)
 
     if args.command == "save-group":
         return _run_save_group(data, args.data_file, args.name, args.room, args.device)
