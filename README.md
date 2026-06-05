@@ -138,8 +138,8 @@ are only controlled once.
 
 Favorites are curated quick actions intended for the Windows companion and
 shortcut exports. They can target a device, room, or group and store an on/off
-state. Use `--json` before the command when another tool needs machine-readable
-output.
+or toggle action. Create them from the GUI **Favorites** panel, or from the CLI.
+Use `--json` before the command when another tool needs machine-readable output.
 
 For a Windows taskbar shortcut, set the shortcut target to a command like:
 
@@ -178,10 +178,11 @@ and editing.
    - Click **Show Color Controls** on a device to reveal brightness, color temperature, and RGB sliders.
    - Use **Apply White** for tunable-white devices or **Apply Color** for RGB output. Preset buttons auto-fill the sliders and send the command.
 6. **Apply Room Scenes**: Select a scene from the dropdown in the room header, optionally adjust the speed, and click **Apply Scene** to broadcast the preset to every light in that room.
-7. **Build Groups**: Use the **Groups** panel to combine whole rooms and individual devices for CLI control.
-8. **Save CLI Shortcuts**: Enter a base shortcut name beside a room or device, then select **Save On** or **Save Off**.
-9. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
-10. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
+7. **Build Favorites**: Use the **Favorites** panel to choose the quick actions shown by the Windows companion.
+8. **Build Groups**: Use the **Groups** panel to combine whole rooms and individual devices for CLI control.
+9. **Save CLI Shortcuts**: Enter a base shortcut name beside a room or device, then select **Save On** or **Save Off**.
+10. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
+11. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
 
 ## Configuration
 

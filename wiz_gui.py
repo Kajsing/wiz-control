@@ -11,6 +11,7 @@ from wiz_discovery import WizDiscovery
 from wiz_store import (
     DATA_FILE,
     build_device_record,
+    build_favorite_record,
     build_group_record,
     describe_group,
     load_data as load_store_data,
@@ -112,6 +113,7 @@ class WizGUI(tk.Tk):
         self._ui_queue = queue.Queue()
         self._closing = False
         self._groups_expanded = False
+        self._favorites_expanded = False
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
         self._configure_style()
@@ -601,6 +603,15 @@ class WizGUI(tk.Tk):
                 if isinstance(group, dict)
             }
 
+    def _get_favorites(self):
+        with self._state_lock:
+            favorites = self.data.setdefault("favorites", {})
+            return {
+                name: copy.deepcopy(favorite)
+                for name, favorite in favorites.items()
+                if isinstance(favorite, dict)
+            }
+
     def _devices_for_group(self, group):
         with self._state_lock:
             devices_by_ip = copy.deepcopy(self.data.get("devices", {}))
@@ -827,7 +838,9 @@ class WizGUI(tk.Tk):
 
         rooms, active_ips, device_status_cache, room_names, room_settings_map = self._build_view_snapshot(include_offline=True)
         groups = self._get_groups()
+        favorites = self._get_favorites()
 
+        self._render_favorites_editor(rooms, room_names, groups, favorites)
         self._render_group_editor(rooms, room_names, groups)
 
         if not rooms:
@@ -1177,6 +1190,197 @@ class WizGUI(tk.Tk):
                     ttk.Separator(room_frame, style="Divider.TSeparator").grid(row=row_offset + 1, column=0, sticky="ew", pady=(4, 0))
 
 
+    def _favorite_target_options(self, target_type, rooms, room_names, groups):
+        options = []
+        if target_type == "device":
+            devices = [
+                device
+                for devices_in_room in rooms.values()
+                for device in devices_in_room
+            ]
+            for device in sorted(devices, key=lambda entry: entry.get("moduleName", "").casefold()):
+                ip = device["ip"]
+                label = f"{device.get('moduleName', f'Device {ip}')} ({ip})"
+                options.append((label, ip))
+        elif target_type == "room":
+            for room_id, devices_in_room in rooms.items():
+                room_name = room_names.get(room_id, f"Room {room_id}")
+                options.append((f"{room_name} (ID {room_id}, {len(devices_in_room)} light(s))", room_id))
+        else:
+            for group_name in sorted(groups):
+                options.append((group_name, group_name))
+        return options
+
+    def _favorite_action_label(self, favorite):
+        if favorite.get("action") == "toggle":
+            return "toggle"
+        return "on" if favorite.get("state") else "off"
+
+    def _describe_favorite(self, favorite, room_names, groups, devices):
+        target_type = favorite.get("target_type", "unknown")
+        target = favorite.get("target", "")
+        if target_type == "device":
+            target_label = devices.get(target, {}).get("moduleName", target)
+        elif target_type == "room":
+            target_label = room_names.get(target, f"Room {target}")
+        elif target_type == "group":
+            target_label = groups.get(target, {}).get("label", target)
+        else:
+            target_label = target
+        return f"{target_type}: {target_label} | {self._favorite_action_label(favorite)}"
+
+    def _render_favorites_editor(self, rooms, room_names, groups, favorites):
+        card = tk.Frame(
+            self.control_frame,
+            bg=SURFACE_COLOR,
+            bd=0,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        card.pack(fill="x", pady=8, padx=4)
+
+        frame = ttk.Frame(card, style="CardContainer.TFrame", padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(frame, style="CardHeader.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="Favorites", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        summary = f"{len(favorites)} saved" if favorites else "No saved favorites"
+        ttk.Label(header, text=summary, style="CardMuted.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        toggle_text = "Hide Favorites" if self._favorites_expanded else "Show Favorites"
+        ttk.Button(
+            header,
+            text=toggle_text,
+            style="Ghost.TButton",
+            command=self.toggle_favorites_editor,
+        ).grid(row=0, column=2, sticky="e")
+
+        if not self._favorites_expanded:
+            return
+
+        form_frame = ttk.Frame(frame, style="CardBody.TFrame")
+        form_frame.grid(row=1, column=0, sticky="ew", pady=(10, 8))
+        form_frame.columnconfigure(5, weight=1)
+
+        favorite_name_var = tk.StringVar(value="Favorite 1")
+        target_type_var = tk.StringVar(value="group")
+        target_var = tk.StringVar()
+        action_var = tk.StringVar(value="Toggle")
+        target_lookup = {}
+
+        ttk.Label(form_frame, text="Name", style="CardMuted.TLabel").grid(row=0, column=0, sticky="w")
+        favorite_name_entry = ttk.Entry(form_frame, textvariable=favorite_name_var, width=22, style="App.TEntry")
+        favorite_name_entry.grid(row=0, column=1, sticky="w", padx=(6, 10))
+        favorite_name_entry.bind("<Return>", self._clear_focus_on_return)
+
+        ttk.Label(form_frame, text="Target", style="CardMuted.TLabel").grid(row=0, column=2, sticky="w")
+        target_type_combo = ttk.Combobox(
+            form_frame,
+            values=("device", "room", "group"),
+            textvariable=target_type_var,
+            width=8,
+            state="readonly",
+            style="App.TCombobox",
+        )
+        target_type_combo.grid(row=0, column=3, sticky="w", padx=(6, 6))
+
+        target_combo = ttk.Combobox(
+            form_frame,
+            values=(),
+            textvariable=target_var,
+            width=34,
+            state="readonly",
+            style="App.TCombobox",
+        )
+        target_combo.grid(row=0, column=4, sticky="w", padx=(0, 10))
+
+        ttk.Label(form_frame, text="Action", style="CardMuted.TLabel").grid(row=0, column=5, sticky="e")
+        action_combo = ttk.Combobox(
+            form_frame,
+            values=("Toggle", "On", "Off"),
+            textvariable=action_var,
+            width=8,
+            state="readonly",
+            style="App.TCombobox",
+        )
+        action_combo.grid(row=0, column=6, sticky="e", padx=(6, 0))
+
+        def update_targets(_event=None):
+            target_lookup.clear()
+            options = self._favorite_target_options(target_type_var.get(), rooms, room_names, groups)
+            labels = [label for label, _target in options]
+            target_lookup.update(dict(options))
+            target_combo.configure(values=labels)
+            target_var.set(labels[0] if labels else "")
+
+        update_targets()
+        target_type_combo.bind("<<ComboboxSelected>>", update_targets)
+
+        actions_frame = ttk.Frame(frame, style="CardBody.TFrame")
+        actions_frame.grid(row=2, column=0, sticky="w", pady=(0, 8))
+        ttk.Button(
+            actions_frame,
+            text="Save Favorite",
+            style="Primary.TButton",
+            command=lambda: self.on_save_favorite(
+                favorite_name_var,
+                target_type_var,
+                target_var,
+                action_var,
+                target_lookup,
+            ),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions_frame,
+            text="Delete Favorite",
+            style="Danger.TButton",
+            command=lambda: self.on_delete_favorite(favorite_name_var),
+        ).pack(side="left")
+
+        ttk.Separator(frame, style="Divider.TSeparator").grid(row=3, column=0, sticky="ew", pady=(8, 8))
+
+        if not favorites:
+            ttk.Label(frame, text="No favorites saved yet.", style="CardMuted.TLabel").grid(row=4, column=0, sticky="w")
+            return
+
+        device_records = {
+            device["ip"]: device
+            for devices_in_room in rooms.values()
+            for device in devices_in_room
+        }
+        for row_index, (favorite_name, favorite) in enumerate(sorted(favorites.items()), start=4):
+            favorite_row = ttk.Frame(frame, style="CardBody.TFrame")
+            favorite_row.grid(row=row_index, column=0, sticky="ew", pady=(2, 0))
+            favorite_row.columnconfigure(1, weight=1)
+            ttk.Label(favorite_row, text=favorite_name, style="Card.TLabel", width=20).grid(row=0, column=0, sticky="w")
+            description = self._describe_favorite(favorite, room_names, groups, device_records)
+            ttk.Label(favorite_row, text=description, style="CardMuted.TLabel").grid(row=0, column=1, sticky="w", padx=(8, 0))
+            ttk.Button(
+                favorite_row,
+                text="Link",
+                style="Secondary.TButton",
+                command=lambda name=favorite_name: self.on_create_favorite_link(name),
+            ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+            ttk.Button(
+                favorite_row,
+                text="Load",
+                style="Ghost.TButton",
+                command=lambda name=favorite_name, favorite_data=copy.deepcopy(favorite): self._load_favorite_selection(
+                    favorite_name_var,
+                    target_type_var,
+                    target_var,
+                    action_var,
+                    target_lookup,
+                    update_targets,
+                    name,
+                    favorite_data,
+                ),
+            ).grid(row=0, column=3, sticky="e", padx=(6, 0))
+
+
     def _render_group_editor(self, rooms, room_names, groups):
         card = tk.Frame(
             self.control_frame,
@@ -1337,6 +1541,34 @@ class WizGUI(tk.Tk):
             var.set(room_id in selected_rooms)
         for ip, var in device_vars.items():
             var.set(ip in selected_devices)
+
+    def _load_favorite_selection(
+        self,
+        favorite_name_var,
+        target_type_var,
+        target_var,
+        action_var,
+        target_lookup,
+        update_targets,
+        favorite_name,
+        favorite,
+    ):
+        favorite_name_var.set(favorite_name)
+        target_type_var.set(favorite.get("target_type", "group"))
+        update_targets()
+        target = str(favorite.get("target", ""))
+        for label, option_target in target_lookup.items():
+            if str(option_target) == target:
+                target_var.set(label)
+                break
+        if favorite.get("action") == "toggle":
+            action_var.set("Toggle")
+        else:
+            action_var.set("On" if favorite.get("state") else "Off")
+
+    def toggle_favorites_editor(self):
+        self._favorites_expanded = not self._favorites_expanded
+        self.schedule_refresh()
 
     def toggle_group_editor(self):
         self._groups_expanded = not self._groups_expanded
@@ -1621,6 +1853,64 @@ class WizGUI(tk.Tk):
 
     def on_create_group_toggle_link(self, group_name):
         self._create_link(f"{group_name} Toggle", ["toggle", "group", group_name])
+
+    def on_create_favorite_link(self, favorite_name):
+        self._create_link(favorite_name, ["favorite", favorite_name])
+
+    def on_save_favorite(self, name_var, target_type_var, target_var, action_var, target_lookup):
+        favorite_name = (name_var.get() or "").strip()
+        target_label = target_var.get()
+        target = target_lookup.get(target_label)
+        action_label = (action_var.get() or "Toggle").strip().casefold()
+
+        if not target:
+            messagebox.showwarning("Invalid Favorite", "Please select a favorite target.")
+            return
+
+        try:
+            if action_label == "toggle":
+                favorite = build_favorite_record(
+                    favorite_name,
+                    target_type_var.get(),
+                    target,
+                    action="toggle",
+                )
+            else:
+                favorite = build_favorite_record(
+                    favorite_name,
+                    target_type_var.get(),
+                    target,
+                    action_label == "on",
+                )
+        except ValueError as exc:
+            messagebox.showwarning("Invalid Favorite", str(exc))
+            return
+
+        with self._state_lock:
+            self.data.setdefault("favorites", {})[favorite["label"]] = favorite
+
+        self._save_data()
+        self.log(f"Favorite '{favorite['label']}' saved.")
+        self.focus_set()
+        self.schedule_refresh()
+
+    def on_delete_favorite(self, name_var):
+        favorite_name = (name_var.get() or "").strip()
+        if not favorite_name:
+            messagebox.showwarning("Invalid Favorite", "Please enter a favorite name.")
+            return
+
+        with self._state_lock:
+            favorites = self.data.setdefault("favorites", {})
+            if favorite_name not in favorites:
+                messagebox.showwarning("Favorite Not Found", f"Favorite '{favorite_name}' does not exist.")
+                return
+            del favorites[favorite_name]
+
+        self._save_data()
+        self.log(f"Favorite '{favorite_name}' deleted.")
+        self.focus_set()
+        self.schedule_refresh()
 
     def on_save_group(self, name_var, room_vars, device_vars):
         group_name = (name_var.get() or "").strip()
