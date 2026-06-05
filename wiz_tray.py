@@ -24,6 +24,13 @@ def _room_ids(data):
     return sorted(room_ids, key=lambda room_id: _room_label(data, room_id).casefold())
 
 
+def _room_devices_sorted(data, room_id):
+    return sorted(
+        _room_devices(data, room_id),
+        key=lambda device: device.get("moduleName", f"Device {device['ip']}").casefold(),
+    )
+
+
 def build_companion_actions(data):
     actions = [
         {
@@ -31,6 +38,7 @@ def build_companion_actions(data):
             "label": "All Off",
             "kind": "all",
             "target": "*",
+            "mode": "set",
             "state": False,
         }
     ]
@@ -43,33 +51,44 @@ def build_companion_actions(data):
                 "label": favorite.get("label", name),
                 "kind": "favorite",
                 "target": name,
+                "mode": "set",
                 "state": favorite["state"],
                 "description": f"{favorite['target_type']}:{favorite['target']} {state_label}",
             }
         )
 
     for name in sorted(data.get("groups", {})):
-        for state in (True, False):
-            actions.append(
-                {
-                    "section": "groups",
-                    "label": f"{name} {'On' if state else 'Off'}",
-                    "kind": "group",
-                    "target": name,
-                    "state": state,
-                }
-            )
+        actions.append(
+            {
+                "section": "groups",
+                "label": name,
+                "kind": "group",
+                "target": name,
+                "mode": "toggle",
+            }
+        )
 
     for room_id in _room_ids(data):
         room_name = _room_label(data, room_id)
-        for state in (True, False):
+        actions.append(
+            {
+                "section": "rooms",
+                "label": room_name,
+                "kind": "room",
+                "target": room_id,
+                "mode": "toggle",
+            }
+        )
+        for device in _room_devices_sorted(data, room_id):
+            ip = device["ip"]
             actions.append(
                 {
-                    "section": "rooms",
-                    "label": f"{room_name} {'On' if state else 'Off'}",
-                    "kind": "room",
-                    "target": room_id,
-                    "state": state,
+                    "section": "devices",
+                    "label": device.get("moduleName", f"Device {ip}"),
+                    "kind": "device",
+                    "target": ip,
+                    "room_id": room_id,
+                    "mode": "toggle",
                 }
             )
 
@@ -97,10 +116,17 @@ class CompanionController:
             return _group_devices(self.data, group)
         if kind == "room":
             return _room_devices(self.data, action["target"])
+        if kind == "device":
+            return [self.data.get("devices", {})[action["target"]]]
         raise ValueError(f"Unknown companion action kind '{kind}'.")
 
     def run_action(self, action):
         devices = self.devices_for_action(action)
+        if action.get("mode") == "toggle":
+            return self.toggle_devices(action, devices)
+        return self.set_devices_state(action, devices)
+
+    def set_devices_state(self, action, devices):
         updated = 0
         for device in devices:
             ip = device["ip"]
@@ -109,6 +135,33 @@ class CompanionController:
                 updated += 1
             else:
                 logging.warning("Could not update %s from tray action '%s'.", ip, action["label"])
+        return updated
+
+    def _read_device_state(self, ip):
+        get_device_state = getattr(self.discovery, "get_device_state", None)
+        if callable(get_device_state):
+            return get_device_state(ip)
+
+        response = self.discovery.send_command(ip, "getPilot", {})
+        result = response.get("result", {}) if isinstance(response, dict) else {}
+        state = result.get("state")
+        return state if isinstance(state, bool) else None
+
+    def toggle_devices(self, action, devices):
+        updated = 0
+        for device in devices:
+            ip = device["ip"]
+            current_state = self._read_device_state(ip)
+            if not isinstance(current_state, bool):
+                logging.warning("Could not read %s before tray action '%s'.", ip, action["label"])
+                continue
+
+            target_state = not current_state
+            response = self.discovery.send_command(ip, "setState", {"state": target_state})
+            if response:
+                updated += 1
+            else:
+                logging.warning("Could not toggle %s from tray action '%s'.", ip, action["label"])
         return updated
 
     def actions(self):
@@ -149,21 +202,56 @@ def _build_menu(pystray, controller, icon):
     def run_action(action):
         return lambda _icon=None, _item=None: _run_in_background(lambda: controller.run_action(action))
 
-    def action_items(section):
-        return [
+    def reload_menu(_icon=None, _item=None):
+        controller.reload()
+        icon.menu = _build_menu(pystray, controller, icon)
+
+    def empty_item(label="No saved items"):
+        return MenuItem(label, None, enabled=False)
+
+    def action_items(actions, section):
+        items = [
             MenuItem(action["label"], run_action(action))
-            for action in controller.actions()
+            for action in actions
             if action["section"] == section
         ]
+        return items or [empty_item()]
+
+    def room_items(actions):
+        rooms = [action for action in actions if action["section"] == "rooms"]
+        devices = [action for action in actions if action["section"] == "devices"]
+        if not rooms:
+            return [empty_item("No rooms saved")]
+
+        items = []
+        for room in rooms:
+            room_devices = [
+                device
+                for device in devices
+                if device.get("room_id") == room["target"]
+            ]
+            submenu_items = [MenuItem("Toggle Room", run_action(room))]
+            if room_devices:
+                submenu_items.append(Menu.SEPARATOR)
+                submenu_items.extend(MenuItem(device["label"], run_action(device)) for device in room_devices)
+            else:
+                submenu_items.extend([Menu.SEPARATOR, empty_item("No lights in room")])
+            items.append(MenuItem(room["label"], Menu(*submenu_items)))
+        return items
+
+    actions = controller.actions()
+    all_off = next(action for action in actions if action["section"] == "global")
 
     return Menu(
-        MenuItem("All Off", run_action(controller.actions()[0])),
-        MenuItem("Favorites", Menu(*action_items("favorites"))),
-        MenuItem("Groups", Menu(*action_items("groups"))),
-        MenuItem("Rooms", Menu(*action_items("rooms"))),
+        MenuItem("Open WiZ Manager", lambda _icon=None, _item=None: _open_manager()),
+        MenuItem("Reload Data", reload_menu),
         Menu.SEPARATOR,
-        MenuItem("Reload", lambda _icon=None, _item=None: controller.reload()),
-        MenuItem("Open Manager", lambda _icon=None, _item=None: _open_manager()),
+        MenuItem("All Off", run_action(all_off)),
+        Menu.SEPARATOR,
+        MenuItem("Favorites", Menu(*action_items(actions, "favorites"))),
+        MenuItem("Groups", Menu(*action_items(actions, "groups"))),
+        MenuItem("Rooms", Menu(*room_items(actions))),
+        Menu.SEPARATOR,
         MenuItem("Quit", lambda _icon=None, _item=None: icon.stop()),
     )
 

@@ -161,8 +161,10 @@ Run the tray companion after installing `requirements.txt`:
 py wiz_tray.py
 ```
 
-The companion shows quick menu actions for **All Off**, favorites, groups, and
-rooms. The full GUI remains the setup surface for discovery and editing.
+The companion shows quick menu actions for **All Off**, favorites, toggleable
+groups, and rooms. Each room opens as a submenu with **Toggle Room** plus
+individual light toggles. The full GUI remains the setup surface for discovery
+and editing.
 
 ### Using the Application
 

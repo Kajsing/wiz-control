@@ -9,10 +9,15 @@ from wiz_tray import CompanionController, build_companion_actions
 class FakeDiscovery:
     def __init__(self):
         self.commands = []
+        self.states = {}
 
     def send_command(self, ip, method, params, timeout=2):
         self.commands.append((ip, method, params, timeout))
         return {"result": {"success": True}}
+
+    def get_device_state(self, ip):
+        self.commands.append((ip, "getPilot", {}, 2))
+        return self.states.get(ip, False)
 
 
 class WizTrayTests(unittest.TestCase):
@@ -23,7 +28,7 @@ class WizTrayTests(unittest.TestCase):
         data_file.write_text(json.dumps(payload))
         return data_file
 
-    def test_build_companion_actions_includes_global_favorites_groups_and_rooms(self):
+    def test_build_companion_actions_includes_toggle_groups_rooms_and_devices(self):
         actions = build_companion_actions(
             {
                 "rooms": {"1": "Office"},
@@ -46,8 +51,18 @@ class WizTrayTests(unittest.TestCase):
         labels = [action["label"] for action in actions]
         self.assertIn("All Off", labels)
         self.assertIn("Work Off", labels)
-        self.assertIn("Work On", labels)
-        self.assertIn("Office On", labels)
+        self.assertIn("Work", labels)
+        self.assertIn("Office", labels)
+        self.assertIn("Desk", labels)
+        self.assertNotIn("Work On", labels)
+        self.assertNotIn("Office On", labels)
+
+        group_action = next(action for action in actions if action["section"] == "groups")
+        room_action = next(action for action in actions if action["section"] == "rooms")
+        device_action = next(action for action in actions if action["section"] == "devices")
+        self.assertEqual(group_action["mode"], "toggle")
+        self.assertEqual(room_action["mode"], "toggle")
+        self.assertEqual(device_action["room_id"], "1")
 
     def test_controller_runs_favorite_action(self):
         data_file = self.write_data(
@@ -88,6 +103,49 @@ class WizTrayTests(unittest.TestCase):
         self.assertEqual(
             discovery.commands,
             [("192.168.1.10", "setState", {"state": False}, 2)],
+        )
+
+    def test_controller_toggles_room_devices_from_current_state(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {
+                        "ip": "192.168.1.10",
+                        "moduleName": "Desk Lamp",
+                        "roomId": "1",
+                        "info": {},
+                    },
+                    "192.168.1.11": {
+                        "ip": "192.168.1.11",
+                        "moduleName": "Shelf Lamp",
+                        "roomId": "1",
+                        "info": {},
+                    },
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.states = {"192.168.1.10": True, "192.168.1.11": False}
+        controller = CompanionController(data_file=str(data_file), discovery=discovery)
+        action = {
+            "section": "rooms",
+            "label": "Office",
+            "kind": "room",
+            "target": "1",
+            "mode": "toggle",
+        }
+
+        updated = controller.run_action(action)
+
+        self.assertEqual(updated, 2)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "getPilot", {}, 2),
+                ("192.168.1.10", "setState", {"state": False}, 2),
+                ("192.168.1.11", "getPilot", {}, 2),
+                ("192.168.1.11", "setState", {"state": True}, 2),
+            ],
         )
 
 
