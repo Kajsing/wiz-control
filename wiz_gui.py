@@ -10,6 +10,7 @@ import time
 from wiz_discovery import WizDiscovery
 from wiz_store import (
     DATA_FILE,
+    build_device_record,
     load_data as load_store_data,
     normalize_data,
     save_data as save_store_data,
@@ -518,29 +519,7 @@ class WizGUI(tk.Tk):
     def _build_device_record(self, ip, info):
         with self._state_lock:
             existing = self.data["devices"].get(ip, {})
-            raw_info = info if isinstance(info, dict) else existing.get("info", {})
-        if not isinstance(raw_info, dict):
-            raw_info = {}
-
-        result = raw_info.get("result", {}) if isinstance(raw_info, dict) else {}
-        module_name = (
-            result.get("moduleName")
-            or existing.get("moduleName")
-            or f"Device {ip}"
-        )
-        room_id = result.get("roomId")
-        if room_id is None:
-            room_id = existing.get("roomId", "Unknown")
-
-        room_id_str = "Unknown" if room_id is None else str(room_id)
-
-        return {
-            "ip": ip,
-            "moduleName": module_name,
-            "roomId": room_id_str,
-            "info": raw_info,
-            "preferences": existing.get("preferences", {}),
-        }
+        return build_device_record(ip, info, existing)
 
     def _build_view_snapshot(self, include_offline=True):
         with self._state_lock:

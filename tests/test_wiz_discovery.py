@@ -1,5 +1,6 @@
 import logging
 import unittest
+from unittest import mock
 
 from wiz_discovery import WizDiscovery
 
@@ -43,6 +44,12 @@ class WizDiscoveryPayloadTests(unittest.TestCase):
         payload = self.discovery._sanitize_pilot_payload(state="on", dimming=50)
 
         self.assertEqual(payload, {"dimming": 50})
+
+    def test_broadcast_addresses_fall_back_when_ip_command_is_missing(self):
+        with mock.patch("wiz_discovery.shutil.which", return_value=None):
+            addresses = WizDiscovery(broadcast_address="192.168.1.255")._get_broadcast_addresses()
+
+        self.assertEqual(addresses, ["192.168.1.255", "255.255.255.255"])
 
 
 if __name__ == "__main__":

@@ -100,15 +100,29 @@ Use `wiz_cli.py` to control devices already discovered and saved by the GUI:
 py wiz_cli.py list devices
 py wiz_cli.py list rooms
 py wiz_cli.py list shortcuts
+py wiz_cli.py list groups
+py wiz_cli.py discover
+py wiz_cli.py discover --timeout 15
 py wiz_cli.py device "192.168.87.10" on
 py wiz_cli.py room "Living Room" off
+py wiz_cli.py save-group "Group 1" --room "Living Room" --device "Desk Lamp"
+py wiz_cli.py group "Group 1" on
+py wiz_cli.py delete-group "Group 1"
 py wiz_cli.py shortcut "Desk Lamp On"
 ```
 
+`discover` listens for up to 10 seconds by default and prints progress while it
+waits for bulb responses. Use `--timeout` after `discover` to choose a different
+listen window.
+
 Shortcuts are saved from the GUI beside each room and device. Enter a base name,
 then select **Save On** or **Save Off**; the app stores names such as
-`Desk Lamp On` and `Desk Lamp Off`. The CLI reads the same `wiz_data.json` file,
-so discover and organize bulbs in the GUI first.
+`Desk Lamp On` and `Desk Lamp Off`. The CLI and GUI read the same
+`wiz_data.json` file, so either entry point can discover bulbs for the other.
+
+Groups combine whole rooms and individual devices. A group can turn on every
+light in one room plus a single lamp from another room, and duplicate devices
+are only controlled once.
 
 For a Windows taskbar shortcut, set the shortcut target to a command like:
 
@@ -118,7 +132,7 @@ py "C:\project\wiz-control\wiz_cli.py" shortcut "Desk Lamp On"
 
 ### Using the Application
 
-1. **Discover Devices**: Click **Discover Devices** to broadcast a `getSystemConfig` request and catalog reachable bulbs.
+1. **Discover Devices**: Click **Discover Devices** in the GUI, or run `py wiz_cli.py discover`, to broadcast a `getSystemConfig` request and catalog reachable bulbs.
 2. **View Devices**: The control panel groups devices by reported room ID and shows the last known power state.
 3. **Control Devices**:
    - **Individual Control**: Use **Turn On/Turn Off** next to each entry to toggle that bulb.
@@ -172,6 +186,13 @@ The application writes a `wiz_data.json` file alongside the scripts to remember 
       "target": "192.168.87.10",
       "action": "state",
       "state": true
+    }
+  },
+  "groups": {
+    "Group 1": {
+      "label": "Group 1",
+      "rooms": ["1"],
+      "devices": ["192.168.87.10"]
     }
   }
 }

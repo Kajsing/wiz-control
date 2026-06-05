@@ -67,6 +67,36 @@ def _normalize_device_records(raw_devices):
     return normalized
 
 
+def build_device_record(ip, info, existing=None):
+    existing = existing if isinstance(existing, dict) else {}
+    raw_info = info if isinstance(info, dict) else existing.get("info", {})
+    if not isinstance(raw_info, dict):
+        raw_info = {}
+
+    result = raw_info.get("result", {}) if isinstance(raw_info, dict) else {}
+    module_name = (
+        result.get("moduleName")
+        or existing.get("moduleName")
+        or f"Device {ip}"
+    )
+    room_id = result.get("roomId")
+    if room_id is None:
+        room_id = existing.get("roomId", "Unknown")
+
+    room_id_str = "Unknown" if room_id is None else str(room_id)
+    preferences = existing.get("preferences", {})
+    if not isinstance(preferences, dict):
+        preferences = {}
+
+    return {
+        "ip": ip,
+        "moduleName": module_name,
+        "roomId": room_id_str,
+        "info": raw_info,
+        "preferences": preferences,
+    }
+
+
 def _normalize_shortcuts(raw_shortcuts):
     normalized = {}
     if not isinstance(raw_shortcuts, dict):
@@ -99,12 +129,40 @@ def _normalize_shortcuts(raw_shortcuts):
     return normalized
 
 
+def _normalize_groups(raw_groups):
+    normalized = {}
+    if not isinstance(raw_groups, dict):
+        return normalized
+
+    for name, group in raw_groups.items():
+        if not isinstance(group, dict):
+            continue
+
+        normalized_name = str(name).strip()
+        raw_rooms = group.get("rooms", [])
+        raw_devices = group.get("devices", [])
+        rooms = [str(room).strip() for room in raw_rooms if str(room).strip()] if isinstance(raw_rooms, list) else []
+        devices = [str(device).strip() for device in raw_devices if str(device).strip()] if isinstance(raw_devices, list) else []
+
+        if not normalized_name or not rooms and not devices:
+            continue
+
+        normalized[normalized_name] = {
+            "label": str(group.get("label") or normalized_name).strip() or normalized_name,
+            "rooms": rooms,
+            "devices": devices,
+        }
+
+    return normalized
+
+
 def _empty_data():
     return {
         "rooms": {},
         "devices": {},
         "room_settings": {},
         "shortcuts": {},
+        "groups": {},
     }
 
 
@@ -116,6 +174,7 @@ def normalize_data(data):
     data.setdefault("room_settings", {})
     data["devices"] = _normalize_device_records(data.get("devices", {}))
     data["shortcuts"] = _normalize_shortcuts(data.get("shortcuts", {}))
+    data["groups"] = _normalize_groups(data.get("groups", {}))
 
     for record in data["devices"].values():
         if not isinstance(record.get("preferences"), dict):

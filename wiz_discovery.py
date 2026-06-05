@@ -2,6 +2,7 @@
 import socket
 import json
 import logging
+import shutil
 import subprocess
 from typing import List, Tuple, Dict, Optional, Any, Set
 
@@ -46,10 +47,13 @@ class WizDiscovery:
 
     def _get_broadcast_addresses(self) -> List[str]:
         addresses: Set[str] = {self.broadcast_address, "255.255.255.255"}
+        ip_command = shutil.which("ip")
+        if not ip_command:
+            return sorted(addresses)
 
         try:
             result = subprocess.run(
-                ["ip", "-j", "-4", "addr", "show", "up"],
+                [ip_command, "-j", "-4", "addr", "show", "up"],
                 check=True,
                 capture_output=True,
                 text=True,

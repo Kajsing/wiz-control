@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from wiz_store import DATA_FILE, normalize_data
+from wiz_store import DATA_FILE, build_device_record, normalize_data
 
 
 class WizStoreTests(unittest.TestCase):
@@ -13,6 +13,18 @@ class WizStoreTests(unittest.TestCase):
         data = normalize_data({"rooms": {}, "devices": {}})
 
         self.assertEqual(data["shortcuts"], {})
+        self.assertEqual(data["groups"], {})
+
+    def test_build_device_record_preserves_existing_preferences(self):
+        record = build_device_record(
+            "192.168.1.10",
+            {"result": {"moduleName": "Desk Lamp", "roomId": 2}},
+            {"preferences": {"dimming": 40}},
+        )
+
+        self.assertEqual(record["moduleName"], "Desk Lamp")
+        self.assertEqual(record["roomId"], "2")
+        self.assertEqual(record["preferences"], {"dimming": 40})
 
     def test_normalize_data_keeps_valid_state_shortcuts(self):
         data = normalize_data(
@@ -61,6 +73,40 @@ class WizStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(data["shortcuts"], {})
+
+    def test_normalize_data_keeps_valid_groups(self):
+        data = normalize_data(
+            {
+                "groups": {
+                    "Group 1": {
+                        "label": "Group 1",
+                        "rooms": ["1"],
+                        "devices": ["192.168.1.10"],
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            data["groups"]["Group 1"],
+            {
+                "label": "Group 1",
+                "rooms": ["1"],
+                "devices": ["192.168.1.10"],
+            },
+        )
+
+    def test_normalize_data_drops_invalid_groups(self):
+        data = normalize_data(
+            {
+                "groups": {
+                    "empty": {"label": "Empty", "rooms": [], "devices": []},
+                    "bad": {"label": "Bad", "rooms": "1", "devices": None},
+                }
+            }
+        )
+
+        self.assertEqual(data["groups"], {})
 
 
 if __name__ == "__main__":
