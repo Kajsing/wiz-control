@@ -44,18 +44,20 @@ def build_companion_actions(data):
     ]
 
     for name, favorite in sorted(data.get("favorites", {}).items()):
-        state_label = "On" if favorite["state"] else "Off"
+        is_toggle = favorite["action"] == "toggle"
+        action_label = "Toggle" if is_toggle else "On" if favorite["state"] else "Off"
         actions.append(
             {
                 "section": "favorites",
                 "label": favorite.get("label", name),
                 "kind": "favorite",
                 "target": name,
-                "mode": "set",
-                "state": favorite["state"],
-                "description": f"{favorite['target_type']}:{favorite['target']} {state_label}",
+                "mode": "toggle" if is_toggle else "set",
+                "description": f"{favorite['target_type']}:{favorite['target']} {action_label}",
             }
         )
+        if not is_toggle:
+            actions[-1]["state"] = favorite["state"]
 
     for name in sorted(data.get("groups", {})):
         actions.append(

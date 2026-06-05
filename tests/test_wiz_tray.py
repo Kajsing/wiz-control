@@ -43,6 +43,12 @@ class WizTrayTests(unittest.TestCase):
                         "target": "Work",
                         "action": "state",
                         "state": False,
+                    },
+                    "Work Toggle": {
+                        "label": "Work Toggle",
+                        "target_type": "group",
+                        "target": "Work",
+                        "action": "toggle",
                     }
                 },
             }
@@ -51,6 +57,7 @@ class WizTrayTests(unittest.TestCase):
         labels = [action["label"] for action in actions]
         self.assertIn("All Off", labels)
         self.assertIn("Work Off", labels)
+        self.assertIn("Work Toggle", labels)
         self.assertIn("Work", labels)
         self.assertIn("Office", labels)
         self.assertIn("Desk", labels)
@@ -58,9 +65,11 @@ class WizTrayTests(unittest.TestCase):
         self.assertNotIn("Office On", labels)
 
         group_action = next(action for action in actions if action["section"] == "groups")
+        favorite_toggle_action = next(action for action in actions if action["label"] == "Work Toggle")
         room_action = next(action for action in actions if action["section"] == "rooms")
         device_action = next(action for action in actions if action["section"] == "devices")
         self.assertEqual(group_action["mode"], "toggle")
+        self.assertEqual(favorite_toggle_action["mode"], "toggle")
         self.assertEqual(room_action["mode"], "toggle")
         self.assertEqual(device_action["room_id"], "1")
 
@@ -145,6 +154,50 @@ class WizTrayTests(unittest.TestCase):
                 ("192.168.1.10", "setState", {"state": False}, 2),
                 ("192.168.1.11", "getPilot", {}, 2),
                 ("192.168.1.11", "setState", {"state": True}, 2),
+            ],
+        )
+
+    def test_controller_toggles_favorite_action(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {
+                        "ip": "192.168.1.10",
+                        "moduleName": "Desk Lamp",
+                        "roomId": "1",
+                        "info": {},
+                    }
+                },
+                "groups": {"Work": {"label": "Work", "rooms": ["1"], "devices": []}},
+                "favorites": {
+                    "Work Toggle": {
+                        "label": "Work Toggle",
+                        "target_type": "group",
+                        "target": "Work",
+                        "action": "toggle",
+                    }
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.states = {"192.168.1.10": False}
+        controller = CompanionController(data_file=str(data_file), discovery=discovery)
+        action = {
+            "section": "favorites",
+            "label": "Work Toggle",
+            "kind": "favorite",
+            "target": "Work Toggle",
+            "mode": "toggle",
+        }
+
+        updated = controller.run_action(action)
+
+        self.assertEqual(updated, 1)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "getPilot", {}, 2),
+                ("192.168.1.10", "setState", {"state": True}, 2),
             ],
         )
 
