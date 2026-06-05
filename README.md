@@ -17,7 +17,6 @@
   - [Data File](#data-file)
 - [Architecture Notes](#architecture-notes)
 - [Contributing](#contributing)
-- [License](#license)
 - [Contact](#contact)
 
 ## Introduction
@@ -47,7 +46,7 @@ WiZ Smart Bulb Manager is a Python-based graphical user interface (GUI) applicat
 
 ```bash
 git clone https://github.com/Kajsing/wiz-control.git
-cd wiz-smart-bulb-manager
+cd wiz-control
 ```
 
 ### Set Up a Virtual Environment (Optional but Recommended)
@@ -143,7 +142,7 @@ The application writes a `wiz_data.json` file alongside the scripts to remember 
 }
 ```
 
-You can safely delete this file to reset the cache—the application will regenerate it on the next launch (room names, preferred light levels, and scene choices will revert to defaults).
+You can safely delete this file to reset the cache. The application will regenerate it on the next launch (room names, preferred light levels, and scene choices will revert to defaults).
 
 ## Architecture Notes
 
@@ -179,10 +178,6 @@ Contributions are welcome! To contribute to WiZ Smart Bulb Manager:
 
 Please ensure your code follows the existing style and includes appropriate documentation. Consult [`AGENTS.md`](AGENTS.md) for detailed contributor guidelines.
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
 ## Contact
 
-For questions or support, open an issue on the GitHub repository or contact [your email](mailto:ckajsing@gmail.com).
+For questions or support, open an issue on the GitHub repository.

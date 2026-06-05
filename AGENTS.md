@@ -4,13 +4,13 @@
 The root module `wiz_gui.py` hosts the Tkinter interface, orchestrating discovery and persistence. Networking logic lives in `wiz_discovery.py`, wrapping UDP broadcast, room grouping, and state polling. `wiz_data.json` is generated at runtime; treat it as cache data and keep fixtures separate. Future helpers belong under `utils/` and GUI assets in `assets/`, referenced from `wiz_gui.py`.
 
 ## Build, Test, and Development Commands
-- `python -m venv .venv && source .venv/bin/activate` – set up the local environment; pin dependencies in `requirements.txt`.
-- `pip install -r requirements.txt` – install GUI and networking dependencies.
-- `python wiz_gui.py` – launch the manager; document new CLI flags in the README if introduced.
-- `python -m pytest` or `python -m unittest discover tests` – run automated checks; keep suites sandboxed from live broadcasts by default.
+- `python -m venv .venv && source .venv/bin/activate` - set up the local environment.
+- `python wiz_gui.py` - launch the manager; document new CLI flags in the README if introduced.
+- `python -m unittest discover tests` - run automated checks with the standard library.
+- `python -m pytest` - run the same tests with pytest when local tooling provides it.
 
 ## Coding Style & Naming Conventions
-Use 4-space indentation, snake_case functions, and UpperCamelCase classes. Keep constants uppercased (`BROADCAST_ADDRESS`) near related logic. Add type hints when touching network helpers and align docstrings with the current tone. GUI strings are Danish—extend that translation consistently or gate alternates with a toggle.
+Use 4-space indentation, snake_case functions, and UpperCamelCase classes. Keep constants uppercased (`BROADCAST_ADDRESS`) near related logic. Add type hints when touching network helpers and align docstrings with the current tone. Keep all project-facing text in English, including GUI strings, README content, logs, and tests.
 
 ## Testing Guidelines
 Prioritize unit coverage of `wiz_discovery.py`, mocking sockets to avoid traffic. Place live-bulb integration tests in `tests/integration/` and guard them with `WIZ_LIVE_TEST=1 python -m pytest`. Name files `test_<module>.py`; store fixtures in `tests/fixtures/`. Add log assertions or state checks so regressions surface before manual QA.

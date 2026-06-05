@@ -1,4 +1,6 @@
 .venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
 wiz_data.json
+wiz_data_*.json

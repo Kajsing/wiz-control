@@ -9,7 +9,7 @@ import queue
 import tempfile
 import time
 
-from wiz_discovery import WizDiscovery  # Import the WizDiscovery class
+from wiz_discovery import WizDiscovery
 
 
 # File for persisting data
@@ -197,10 +197,10 @@ class WizGUI(tk.Tk):
         self._ui_queue = queue.Queue()
         self._closing = False
         self.style = ttk.Style(self)
-        self.style.theme_use('clam')  # Can be changed to 'default', 'classic', etc.
+        self.style.theme_use("clam")
         self._configure_style()
 
-        self.discovery = WizDiscovery()  # Initialize the WizDiscovery class
+        self.discovery = WizDiscovery()
         self.data = load_data()
         self.active_ips = set()
         self.device_status_cache = {ip: None for ip in self.data["devices"]}
