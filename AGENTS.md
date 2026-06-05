@@ -15,6 +15,9 @@ Use 4-space indentation, snake_case functions, and UpperCamelCase classes. Keep 
 ## Testing Guidelines
 Prioritize unit coverage of `wiz_discovery.py`, mocking sockets to avoid traffic. Place live-bulb integration tests in `tests/integration/` and guard them with `WIZ_LIVE_TEST=1 python -m pytest`. Name files `test_<module>.py`; store fixtures in `tests/fixtures/`. Add log assertions or state checks so regressions surface before manual QA.
 
+## Codex Infrastructure
+Keep repository instructions in this `AGENTS.md` file so Codex loads them before work begins. Project-scoped Codex settings live in `.codex/config.toml`; keep that file conservative and avoid secrets. Use `.codex/README.md` to explain any Codex-only setup. Do not add project hooks, MCP servers, or skills unless they solve a concrete repo workflow and are safe for collaborators to trust.
+
 ## Commit & Pull Request Guidelines
 History favors concise messages (`o1-mini readme generated`, `version 1`); continue with single-line imperatives or scoped prefixes (`gui:`). Each pull request should state motivation, summarize impact, list verification steps, and attach GUI screenshots or recordings. Link issues and flag networking assumptions or firewall needs.
 

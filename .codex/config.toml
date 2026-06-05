@@ -1,0 +1,9 @@
+# Project-scoped Codex defaults. Codex loads this file only after the
+# repository is trusted, and personal CLI flags or user config can override it.
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+web_search = "cached"
+
+[features]
+hooks = true

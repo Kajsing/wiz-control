@@ -2,5 +2,6 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.codex-log/
 wiz_data.json
 wiz_data_*.json

@@ -12,6 +12,7 @@
   - [Install Dependencies](#install-dependencies)
 - [Usage](#usage)
   - [Running the Application](#running-the-application)
+  - [Command Line Control](#command-line-control)
   - [Using the Application](#using-the-application)
 - [Configuration](#configuration)
   - [Data File](#data-file)
@@ -91,6 +92,30 @@ To start the WiZ Smart Bulb Manager, navigate to the project directory and run:
 python3 wiz_gui.py
 ```
 
+### Command Line Control
+
+Use `wiz_cli.py` to control devices already discovered and saved by the GUI:
+
+```bash
+python3 wiz_cli.py list devices
+python3 wiz_cli.py list rooms
+python3 wiz_cli.py list shortcuts
+python3 wiz_cli.py device "192.168.87.10" on
+python3 wiz_cli.py room "Living Room" off
+python3 wiz_cli.py shortcut "Desk Lamp On"
+```
+
+Shortcuts are saved from the GUI beside each room and device. Enter a base name,
+then select **Save On** or **Save Off**; the app stores names such as
+`Desk Lamp On` and `Desk Lamp Off`. The CLI reads the same `wiz_data.json` file,
+so discover and organize bulbs in the GUI first.
+
+For a Windows taskbar shortcut targeting this WSL checkout, use a command like:
+
+```powershell
+wsl.exe -d Ubuntu-22.04 -- bash -lc "cd /home/kajsing/projects/wiz-control && python3 wiz_cli.py shortcut 'Desk Lamp On'"
+```
+
 ### Using the Application
 
 1. **Discover Devices**: Click **Discover Devices** to broadcast a `getSystemConfig` request and catalog reachable bulbs.
@@ -103,8 +128,9 @@ python3 wiz_gui.py
    - Click **Show Color Controls** on a device to reveal brightness, color temperature, and RGB sliders.
    - Use **Apply White** for tunable-white devices or **Apply Color** for RGB output. Preset buttons auto-fill the sliders and send the command.
 6. **Apply Room Scenes**: Select a scene from the dropdown in the room header, optionally adjust the speed, and click **Apply Scene** to broadcast the preset to every light in that room.
-7. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
-8. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
+7. **Save CLI Shortcuts**: Enter a base shortcut name beside a room or device, then select **Save On** or **Save Off**.
+8. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
+9. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
 
 ## Configuration
 
@@ -138,6 +164,15 @@ The application writes a `wiz_data.json` file alongside the scripts to remember 
       "sceneId": 5,
       "sceneSpeed": 120
     }
+  },
+  "shortcuts": {
+    "Desk Lamp On": {
+      "label": "Desk Lamp On",
+      "target_type": "device",
+      "target": "192.168.87.10",
+      "action": "state",
+      "state": true
+    }
   }
 }
 ```
@@ -148,6 +183,8 @@ You can safely delete this file to reset the cache. The application will regener
 
 - **GUI (`wiz_gui.py`)** manages Tkinter widgets, cached discovery data, and background polling threads. Device state changes update an in-memory cache before triggering lightweight UI refreshes.
 - **Discovery (`wiz_discovery.py`)** encapsulates UDP broadcast discovery, per-device command calls, and room grouping helpers. Network access is deliberately serialized in the status poller to avoid saturating the WiZ protocol.
+- **CLI (`wiz_cli.py`)** exposes saved devices, rooms, and GUI-defined shortcuts for scripts, shell aliases, and Windows shortcuts.
+- **Data Store (`wiz_store.py`)** centralizes `wiz_data.json` loading, normalization, and atomic writes for both GUI and CLI entry points.
 - **Contributor Guide**: See [`AGENTS.md`](AGENTS.md) for coding standards, testing guidance, and pull-request expectations tailored to this project.
 
 ## Contributing

@@ -1,6 +1,6 @@
 import unittest
 
-from wiz_gui import _coerce_device_record, _normalize_device_records
+from wiz_store import _coerce_device_record, _normalize_device_records
 
 
 class WizGuiDataTests(unittest.TestCase):

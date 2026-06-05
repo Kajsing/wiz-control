@@ -4,17 +4,16 @@ import tkinter.font as tkfont
 import copy
 import threading
 import json
-import os
 import queue
-import tempfile
 import time
 
 from wiz_discovery import WizDiscovery
-
-
-# File for persisting data
-DATA_FILE = "wiz_data.json"
-DATA_FILE_LOCK = threading.Lock()
+from wiz_store import (
+    DATA_FILE,
+    load_data as load_store_data,
+    normalize_data,
+    save_data as save_store_data,
+)
 
 BACKGROUND_COLOR = "#f3f4f6"
 SURFACE_COLOR = "#ffffff"
@@ -81,106 +80,16 @@ COLOR_PRESETS = [
 ]
 
 
-def _extract_preferences(payload):
-    if isinstance(payload, dict):
-        preferences = payload.get("preferences")
-        if isinstance(preferences, dict):
-            return preferences
-    return {}
-
-
-def _normalize_device_records(raw_devices):
-    normalized = {}
-    if not isinstance(raw_devices, dict):
-        return normalized
-
-    for ip, payload in raw_devices.items():
-        record = _coerce_device_record(ip, payload)
-        if record:
-            normalized[ip] = record
-    return normalized
-
-
-def _coerce_device_record(ip, payload):
-    if not isinstance(payload, dict):
-        return None
-
-    preferences = _extract_preferences(payload)
-
-    if {"moduleName", "roomId", "info"}.issubset(payload.keys()):
-        room_id = payload.get("roomId", "Unknown")
-        info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
-        return {
-            "ip": ip,
-            "moduleName": payload.get("moduleName") or f"Device {ip}",
-            "roomId": str(room_id) if room_id is not None else "Unknown",
-            "info": info,
-            "preferences": preferences,
-        }
-
-    info = payload.get("info") if isinstance(payload.get("info"), dict) else payload
-    if not isinstance(info, dict):
-        info = {}
-    result = info.get("result", {}) if isinstance(info, dict) else {}
-    module_name = (
-        payload.get("moduleName")
-        or result.get("moduleName")
-        or f"Device {ip}"
-    )
-    room_id = payload.get("roomId") or result.get("roomId")
-    room_id_str = "Unknown" if room_id is None else str(room_id)
-
-    return {
-        "ip": ip,
-        "moduleName": module_name,
-        "roomId": room_id_str,
-        "info": info,
-        "preferences": preferences,
-    }
-
-
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r") as file:
-                data = json.load(file)
-        except json.JSONDecodeError:
-            messagebox.showerror("Error", "Data file is corrupted. Loading empty data.")
-            data = None
-    else:
-        data = None
-
-    if not isinstance(data, dict):
-        data = {"rooms": {}, "devices": {}}
-
-    data.setdefault("rooms", {})
-    data.setdefault("room_settings", {})
-    raw_devices = data.get("devices", {})
-    data["devices"] = _normalize_device_records(raw_devices)
-    for record in data["devices"].values():
-        if not isinstance(record.get("preferences"), dict):
-            record["preferences"] = {}
-    return data
+    try:
+        return load_store_data(DATA_FILE)
+    except json.JSONDecodeError:
+        messagebox.showerror("Error", "Data file is corrupted. Loading empty data.")
+        return normalize_data(None)
 
 
 def save_data(data):
-    directory = os.path.dirname(os.path.abspath(DATA_FILE)) or "."
-    temp_path = None
-
-    with DATA_FILE_LOCK:
-        try:
-            fd, temp_path = tempfile.mkstemp(prefix="wiz_data_", suffix=".json", dir=directory)
-            with os.fdopen(fd, "w") as file:
-                json.dump(data, file, indent=4)
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temp_path, DATA_FILE)
-        finally:
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except OSError:
-                    pass
+    save_store_data(data, DATA_FILE)
 
 
 class WizGUI(tk.Tk):
@@ -809,6 +718,24 @@ class WizGUI(tk.Tk):
             )
             turn_off_btn.pack(side="left")
 
+            room_shortcut_var = tk.StringVar(value=room_name)
+            room_shortcut_frame = ttk.Frame(scene_frame, style="CardHeader.TFrame")
+            room_shortcut_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            ttk.Label(room_shortcut_frame, text="Shortcut", style="CardMuted.TLabel").pack(side="left")
+            ttk.Entry(room_shortcut_frame, textvariable=room_shortcut_var, width=24, style="App.TEntry").pack(side="left", padx=(8, 6))
+            ttk.Button(
+                room_shortcut_frame,
+                text="Save On",
+                style="Ghost.TButton",
+                command=lambda var=room_shortcut_var, rid=room_id: self.on_save_state_shortcut(var, "room", rid, True),
+            ).pack(side="left", padx=(0, 4))
+            ttk.Button(
+                room_shortcut_frame,
+                text="Save Off",
+                style="Ghost.TButton",
+                command=lambda var=room_shortcut_var, rid=room_id: self.on_save_state_shortcut(var, "room", rid, False),
+            ).pack(side="left")
+
             for device_index, device in enumerate(devices_in_room):
                 row_offset = 2 + device_index * 2
                 ip = device["ip"]
@@ -884,8 +811,26 @@ class WizGUI(tk.Tk):
                 remove_button = ttk.Button(device_frame, text="Remove", style="Danger.TButton", command=lambda i=ip: self.on_remove_device(i))
                 remove_button.grid(row=0, column=4, padx=5)
 
+                device_shortcut_var = tk.StringVar(value=module_name)
+                device_shortcut_frame = ttk.Frame(device_frame, style="CardBody.TFrame")
+                device_shortcut_frame.grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 0))
+                ttk.Label(device_shortcut_frame, text="Shortcut", style="CardMuted.TLabel").pack(side="left")
+                ttk.Entry(device_shortcut_frame, textvariable=device_shortcut_var, width=24, style="App.TEntry").pack(side="left", padx=(8, 6))
+                ttk.Button(
+                    device_shortcut_frame,
+                    text="Save On",
+                    style="Ghost.TButton",
+                    command=lambda var=device_shortcut_var, target_ip=ip: self.on_save_state_shortcut(var, "device", target_ip, True),
+                ).pack(side="left", padx=(0, 4))
+                ttk.Button(
+                    device_shortcut_frame,
+                    text="Save Off",
+                    style="Ghost.TButton",
+                    command=lambda var=device_shortcut_var, target_ip=ip: self.on_save_state_shortcut(var, "device", target_ip, False),
+                ).pack(side="left")
+
                 color_container, color_frame = self._create_collapsible_section(device_frame, "Color Controls", collapsed=True)
-                color_container.grid(row=1, column=0, columnspan=5, sticky="we", pady=(8, 0))
+                color_container.grid(row=2, column=0, columnspan=5, sticky="we", pady=(8, 0))
                 color_frame.columnconfigure(1, weight=1)
 
                 brightness_var = tk.IntVar(value=brightness_value)
@@ -1189,6 +1134,31 @@ class WizGUI(tk.Tk):
 
         self._start_worker(update, "status-poller")
         return stop_event
+
+    def on_save_state_shortcut(self, name_var, target_type, target, state):
+        shortcut_name = (name_var.get() or "").strip()
+        if not shortcut_name:
+            messagebox.showwarning("Invalid Shortcut", "Please enter a shortcut name.")
+            return
+
+        state_label = "On" if state else "Off"
+        if not shortcut_name.casefold().endswith((" on", " off")):
+            shortcut_name = f"{shortcut_name} {state_label}"
+
+        shortcut = {
+            "label": shortcut_name,
+            "target_type": target_type,
+            "target": str(target),
+            "action": "state",
+            "state": bool(state),
+        }
+
+        with self._state_lock:
+            self.data.setdefault("shortcuts", {})[shortcut_name] = shortcut
+
+        self._save_data()
+        command = f'python wiz_cli.py shortcut "{shortcut_name}"'
+        self.log(f"Shortcut '{shortcut_name}' saved. Use: {command}")
 
     def on_save_room_name(self, room_id, name_var):
         new_name = (name_var.get() or "").strip()
