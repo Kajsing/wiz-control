@@ -173,18 +173,19 @@ def _normalize_favorites(raw_favorites):
 
         if not normalized_name or target_type not in {"device", "room", "group"}:
             continue
-        if not target or action != "state":
+        if not target or action not in {"state", "toggle"}:
             continue
-        if not isinstance(favorite.get("state"), bool):
+        if action == "state" and not isinstance(favorite.get("state"), bool):
             continue
 
         normalized[normalized_name] = {
             "label": str(favorite.get("label") or normalized_name).strip() or normalized_name,
             "target_type": target_type,
             "target": str(target),
-            "action": "state",
-            "state": favorite["state"],
+            "action": action,
         }
+        if action == "state":
+            normalized[normalized_name]["state"] = favorite["state"]
 
     return normalized
 
@@ -206,10 +207,11 @@ def build_group_record(name, rooms, devices):
     }
 
 
-def build_favorite_record(name, target_type, target, state):
+def build_favorite_record(name, target_type, target, state=None, action="state"):
     favorite_name = str(name).strip()
     target_type = str(target_type).strip()
     target = str(target).strip()
+    action = str(action).strip()
 
     if not favorite_name:
         raise ValueError("Favorite name cannot be empty.")
@@ -217,16 +219,20 @@ def build_favorite_record(name, target_type, target, state):
         raise ValueError("Favorite target type must be device, room, or group.")
     if not target:
         raise ValueError("Favorite target cannot be empty.")
-    if not isinstance(state, bool):
+    if action not in {"state", "toggle"}:
+        raise ValueError("Favorite action must be state or toggle.")
+    if action == "state" and not isinstance(state, bool):
         raise ValueError("Favorite state must be a boolean.")
 
-    return {
+    record = {
         "label": favorite_name,
         "target_type": target_type,
         "target": target,
-        "action": "state",
-        "state": state,
+        "action": action,
     }
+    if action == "state":
+        record["state"] = state
+    return record
 
 
 def describe_group(group, room_names=None, devices=None):

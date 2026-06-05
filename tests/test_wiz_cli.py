@@ -501,6 +501,35 @@ class WizCliTests(unittest.TestCase):
             },
         )
 
+    def test_save_favorite_supports_toggle_action(self):
+        data_file = self.write_data(
+            {
+                "groups": {
+                    "Evening": {
+                        "label": "Evening",
+                        "rooms": ["1"],
+                        "devices": [],
+                    }
+                }
+            }
+        )
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "save-favorite", "Evening Toggle", "group", "Evening", "toggle"]
+        )
+
+        saved = json.loads(data_file.read_text())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            saved["favorites"]["Evening Toggle"],
+            {
+                "label": "Evening Toggle",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "toggle",
+            },
+        )
+
     def test_list_favorites_prints_saved_favorites(self):
         data_file = self.write_data(
             {
@@ -522,6 +551,27 @@ class WizCliTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("Evening Off\tgroup:Evening\toff", output.getvalue())
+
+    def test_list_favorites_prints_toggle_action(self):
+        data_file = self.write_data(
+            {
+                "favorites": {
+                    "Evening Toggle": {
+                        "label": "Evening Toggle",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "toggle",
+                    }
+                }
+            }
+        )
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = wiz_cli.main(["--data-file", str(data_file), "list", "favorites"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Evening Toggle\tgroup:Evening\ttoggle", output.getvalue())
 
     def test_favorite_command_targets_saved_group(self):
         data_file = self.write_data(
@@ -561,6 +611,52 @@ class WizCliTests(unittest.TestCase):
             [
                 ("192.168.1.10", "setState", {"state": False}, 2),
                 ("192.168.1.11", "setState", {"state": False}, 2),
+            ],
+        )
+
+    def test_favorite_command_can_toggle_saved_group(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}},
+                    "192.168.1.11": {"moduleName": "Shelf Lamp", "roomId": "1", "info": {}},
+                },
+                "groups": {
+                    "Evening": {
+                        "label": "Evening",
+                        "rooms": ["1"],
+                        "devices": [],
+                    }
+                },
+                "favorites": {
+                    "Evening Toggle": {
+                        "label": "Evening Toggle",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "toggle",
+                    }
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {
+            "192.168.1.10": {"result": {"state": True}},
+            "192.168.1.11": {"result": {"state": False}},
+        }
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "favorite", "Evening Toggle"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "getPilot", {}, 2),
+                ("192.168.1.10", "setState", {"state": False}, 2),
+                ("192.168.1.11", "getPilot", {}, 2),
+                ("192.168.1.11", "setState", {"state": True}, 2),
             ],
         )
 

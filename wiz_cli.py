@@ -197,7 +197,8 @@ def _list_favorites(data):
             "label": favorite.get("label", name),
             "target_type": favorite["target_type"],
             "target": favorite["target"],
-            "state": favorite["state"],
+            "action": favorite["action"],
+            "state": favorite.get("state"),
         }
         for name, favorite in sorted(data.get("favorites", {}).items())
     ]
@@ -388,8 +389,8 @@ def _print_groups(data):
 
 def _print_favorites(data):
     for favorite in _list_favorites(data):
-        state = "on" if favorite["state"] else "off"
-        print(f"{favorite['name']}\t{favorite['target_type']}:{favorite['target']}\t{state}")
+        action = "toggle" if favorite["action"] == "toggle" else "on" if favorite["state"] else "off"
+        print(f"{favorite['name']}\t{favorite['target_type']}:{favorite['target']}\t{action}")
 
 
 def _print_discovery_progress(stop_event):
@@ -511,7 +512,10 @@ def _favorite_devices(data, favorite):
 
 def _run_save_favorite(data, data_file, name, target_type, target, state, json_output=False):
     resolved_target = _resolve_favorite_target(data, target_type, target)
-    favorite = build_favorite_record(name, target_type, resolved_target, state == "on")
+    if state == "toggle":
+        favorite = build_favorite_record(name, target_type, resolved_target, action="toggle")
+    else:
+        favorite = build_favorite_record(name, target_type, resolved_target, state == "on")
     favorite_name = favorite["label"]
     data.setdefault("favorites", {})[favorite_name] = favorite
     save_data(data, data_file)
@@ -521,7 +525,10 @@ def _run_save_favorite(data, data_file, name, target_type, target, state, json_o
     else:
         print(f"Saved favorite '{favorite_name}'.")
         print(f"target={favorite['target_type']}:{favorite['target']}")
-        print(f"state={'on' if favorite['state'] else 'off'}")
+        if favorite["action"] == "toggle":
+            print("action=toggle")
+        else:
+            print(f"state={'on' if favorite['state'] else 'off'}")
     return 0
 
 
@@ -607,7 +614,7 @@ def build_parser():
     save_favorite_parser.add_argument("name", help="Favorite name.")
     save_favorite_parser.add_argument("target_type", choices=("device", "room", "group"))
     save_favorite_parser.add_argument("target", help="Device, room, or group name/identifier.")
-    save_favorite_parser.add_argument("state", choices=("on", "off"))
+    save_favorite_parser.add_argument("state", choices=("on", "off", "toggle"))
 
     delete_favorite_parser = subparsers.add_parser("delete-favorite", help="Delete a saved favorite quick action.")
     delete_favorite_parser.add_argument("name", help="Favorite name.")
@@ -714,9 +721,17 @@ def run_command(args, discovery=None):
 
     if args.command == "favorite":
         _, favorite = _resolve_favorite(data, args.name)
+        devices = _favorite_devices(data, favorite)
+        if favorite["action"] == "toggle":
+            return _toggle_devices(
+                discovery,
+                devices,
+                args.command_timeout,
+                json_output=args.json_output,
+            )
         return _send_state(
             discovery,
-            _favorite_devices(data, favorite),
+            devices,
             favorite["state"],
             args.command_timeout,
             json_output=args.json_output,

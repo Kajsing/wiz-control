@@ -83,6 +83,17 @@ class WizStoreTests(unittest.TestCase):
             },
         )
 
+    def test_build_favorite_record_supports_toggle_action(self):
+        self.assertEqual(
+            build_favorite_record(" Evening Toggle ", "group", " Evening ", action="toggle"),
+            {
+                "label": "Evening Toggle",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "toggle",
+            },
+        )
+
     def test_build_favorite_record_requires_valid_fields(self):
         with self.assertRaises(ValueError):
             build_favorite_record("", "group", "Evening", False)
@@ -92,6 +103,8 @@ class WizStoreTests(unittest.TestCase):
             build_favorite_record("Evening", "group", "", False)
         with self.assertRaises(ValueError):
             build_favorite_record("Evening", "group", "Evening", "off")
+        with self.assertRaises(ValueError):
+            build_favorite_record("Evening", "group", "Evening", action="scene")
 
     def test_describe_group_uses_room_and_device_labels(self):
         description = describe_group(
@@ -247,6 +260,30 @@ class WizStoreTests(unittest.TestCase):
                 "target": "Evening",
                 "action": "state",
                 "state": False,
+            },
+        )
+
+    def test_normalize_data_keeps_toggle_favorites(self):
+        data = normalize_data(
+            {
+                "favorites": {
+                    "evening-toggle": {
+                        "label": "Evening Toggle",
+                        "target_type": "group",
+                        "target": "Evening",
+                        "action": "toggle",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            data["favorites"]["evening-toggle"],
+            {
+                "label": "Evening Toggle",
+                "target_type": "group",
+                "target": "Evening",
+                "action": "toggle",
             },
         )
 
