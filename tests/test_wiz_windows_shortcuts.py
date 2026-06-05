@@ -1,8 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from wiz_windows_shortcuts import build_cli_shortcut_plan, sanitize_shortcut_name
+from wiz_windows_shortcuts import build_cli_shortcut_plan, create_windows_shortcut, sanitize_shortcut_name
 
 
 class WizWindowsShortcutTests(unittest.TestCase):
@@ -30,6 +31,26 @@ class WizWindowsShortcutTests(unittest.TestCase):
         self.assertIn('"favorite"', plan["arguments"])
         self.assertIn('"Evening Off"', plan["arguments"])
         self.assertEqual(Path(plan["working_dir"]), script_path.parent.resolve())
+
+    def test_create_windows_shortcut_uses_encoded_powershell_for_paths_with_spaces(self):
+        plan = {
+            "name": "Stue 1 Toggle",
+            "path": str(Path(tempfile.gettempdir()) / "Stue 1 Toggle.lnk"),
+            "target": r"C:\Program Files\Python\python.exe",
+            "arguments": r'"C:\project\wiz-control\wiz_cli.py" "toggle" "device" "Stue 1"',
+            "working_dir": r"C:\project\wiz-control",
+        }
+
+        with mock.patch("wiz_windows_shortcuts.subprocess.run") as run_mock:
+            run_mock.return_value.returncode = 0
+            run_mock.return_value.stderr = ""
+            run_mock.return_value.stdout = ""
+            create_windows_shortcut(plan)
+
+        args = run_mock.call_args.args[0]
+        self.assertIn("-EncodedCommand", args)
+        self.assertNotIn(plan["path"], args)
+        self.assertNotIn(plan["arguments"], args)
 
 
 if __name__ == "__main__":

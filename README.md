@@ -112,6 +112,8 @@ py wiz_cli.py status device "Desk Lamp"
 py wiz_cli.py --json status room "Living Room"
 py wiz_cli.py device "192.168.87.10" on
 py wiz_cli.py room "Living Room" off
+py wiz_cli.py toggle device "Desk Lamp"
+py wiz_cli.py toggle group "Group 1"
 py wiz_cli.py save-group "Group 1" --room "Living Room" --device "Desk Lamp"
 py wiz_cli.py group "Group 1" on
 py wiz_cli.py delete-group "Group 1"

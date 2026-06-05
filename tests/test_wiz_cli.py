@@ -122,6 +122,69 @@ class WizCliTests(unittest.TestCase):
             ],
         )
 
+    def test_toggle_device_turns_on_when_currently_off(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}}
+                }
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {"192.168.1.10": {"result": {"state": False}}}
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "toggle", "device", "Desk Lamp"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "getPilot", {}, 2),
+                ("192.168.1.10", "setState", {"state": True}, 2),
+            ],
+        )
+
+    def test_toggle_group_flips_each_device_from_its_current_state(self):
+        data_file = self.write_data(
+            {
+                "devices": {
+                    "192.168.1.10": {"moduleName": "Desk Lamp", "roomId": "1", "info": {}},
+                    "192.168.1.11": {"moduleName": "Shelf Lamp", "roomId": "1", "info": {}},
+                },
+                "groups": {
+                    "Work": {
+                        "label": "Work",
+                        "rooms": ["1"],
+                        "devices": [],
+                    }
+                },
+            }
+        )
+        discovery = FakeDiscovery()
+        discovery.pilot_responses = {
+            "192.168.1.10": {"result": {"state": True}},
+            "192.168.1.11": {"result": {"state": False}},
+        }
+
+        exit_code = self.run_cli(
+            ["--data-file", str(data_file), "toggle", "group", "Work"],
+            discovery=discovery,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            discovery.commands,
+            [
+                ("192.168.1.10", "getPilot", {}, 2),
+                ("192.168.1.10", "setState", {"state": False}, 2),
+                ("192.168.1.11", "getPilot", {}, 2),
+                ("192.168.1.11", "setState", {"state": True}, 2),
+            ],
+        )
+
     def test_save_group_resolves_rooms_and_devices(self):
         data_file = self.write_data(
             {

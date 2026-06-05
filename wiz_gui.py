@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, filedialog
 import tkinter.font as tkfont
 import copy
 import threading
@@ -18,6 +18,7 @@ from wiz_store import (
     rename_generic_room_devices,
     save_data as save_store_data,
 )
+from wiz_windows_shortcuts import build_cli_shortcut_plan, create_windows_shortcut
 
 BACKGROUND_COLOR = "#0b1020"
 SURFACE_COLOR = "#121a2b"
@@ -454,6 +455,40 @@ class WizGUI(tk.Tk):
                 self.schedule_status_refresh()
 
         self._start_worker(toggle, "toggle-group")
+
+    def on_toggle_group_state(self, group_name, group):
+        devices = self._devices_for_group(group)
+        if not devices:
+            messagebox.showwarning("Empty Group", f"Group '{group_name}' does not contain any saved devices.")
+            return
+
+        def toggle():
+            updated_count = 0
+            for device in devices:
+                ip = device["ip"]
+                try:
+                    current_state = self.discovery.get_device_state(ip)
+                    if not isinstance(current_state, bool):
+                        self.log(f"Could not read current state for {ip} in group '{group_name}'.")
+                        continue
+
+                    target_state = not current_state
+                    response = self.discovery.send_command(ip, "setState", {"state": target_state})
+                    if response:
+                        updated_count += 1
+                        with self._state_lock:
+                            self.device_status_cache[ip] = target_state
+                            self.active_ips.add(ip)
+                    else:
+                        self.log(f"Could not toggle device {ip} in group '{group_name}'.")
+                except Exception as exc:
+                    self.log(f"Error while toggling device {ip} in group '{group_name}': {exc}")
+
+            if updated_count:
+                self.log(f"Group '{group_name}' toggled ({updated_count} device(s)).")
+                self.schedule_status_refresh()
+
+        self._start_worker(toggle, "toggle-group-state")
 
     def on_remove_device(self, ip):
         removed = False
@@ -939,6 +974,12 @@ class WizGUI(tk.Tk):
                 text="Save Off",
                 style="Ghost.TButton",
                 command=lambda var=room_shortcut_var, rid=room_id: self.on_save_state_shortcut(var, "room", rid, False),
+            ).pack(side="left", padx=(0, 4))
+            ttk.Button(
+                room_shortcut_frame,
+                text="Link Toggle",
+                style="Secondary.TButton",
+                command=lambda var=room_shortcut_var, rid=room_id: self.on_create_toggle_link(var, "room", rid),
             ).pack(side="left")
 
             for device_index, device in enumerate(devices_in_room):
@@ -1029,6 +1070,12 @@ class WizGUI(tk.Tk):
                     text="Save Off",
                     style="Ghost.TButton",
                     command=lambda var=device_shortcut_var, target_ip=ip: self.on_save_state_shortcut(var, "device", target_ip, False),
+                ).pack(side="left", padx=(0, 4))
+                ttk.Button(
+                    device_shortcut_frame,
+                    text="Link Toggle",
+                    style="Secondary.TButton",
+                    command=lambda var=device_shortcut_var, target_ip=ip: self.on_create_toggle_link(var, "device", target_ip),
                 ).pack(side="left")
 
                 color_frame = ttk.Frame(details_frame, style="SectionBody.TFrame")
@@ -1255,6 +1302,21 @@ class WizGUI(tk.Tk):
             ).grid(row=0, column=3, sticky="e", padx=(6, 0))
             ttk.Button(
                 group_row,
+                text="Toggle",
+                style="Ghost.TButton",
+                command=lambda name=group_name, group_data=copy.deepcopy(group): self.on_toggle_group_state(
+                    name,
+                    group_data,
+                ),
+            ).grid(row=0, column=4, sticky="e", padx=(6, 0))
+            ttk.Button(
+                group_row,
+                text="Link",
+                style="Secondary.TButton",
+                command=lambda name=group_name: self.on_create_group_toggle_link(name),
+            ).grid(row=0, column=5, sticky="e", padx=(6, 0))
+            ttk.Button(
+                group_row,
                 text="Load",
                 style="Ghost.TButton",
                 command=lambda name=group_name, group_data=copy.deepcopy(group): self._load_group_selection(
@@ -1264,7 +1326,7 @@ class WizGUI(tk.Tk):
                     name,
                     group_data,
                 ),
-            ).grid(row=0, column=4, sticky="e", padx=(6, 0))
+            ).grid(row=0, column=6, sticky="e", padx=(6, 0))
 
     def _load_group_selection(self, group_name_var, room_vars, device_vars, group_name, group):
         group_name_var.set(group_name)
@@ -1489,10 +1551,20 @@ class WizGUI(tk.Tk):
         return stop_event
 
     def on_save_state_shortcut(self, name_var, target_type, target, state):
+        try:
+            shortcut_name = self._save_state_shortcut_record(name_var, target_type, target, state)
+        except ValueError as exc:
+            messagebox.showwarning("Invalid Shortcut", str(exc))
+            return
+
+        command = f'py wiz_cli.py shortcut "{shortcut_name}"'
+        self.log(f"Shortcut '{shortcut_name}' saved. Use: {command}")
+        self.focus_set()
+
+    def _save_state_shortcut_record(self, name_var, target_type, target, state):
         shortcut_name = (name_var.get() or "").strip()
         if not shortcut_name:
-            messagebox.showwarning("Invalid Shortcut", "Please enter a shortcut name.")
-            return
+            raise ValueError("Please enter a shortcut name.")
 
         state_label = "On" if state else "Off"
         if not shortcut_name.casefold().endswith((" on", " off")):
@@ -1509,10 +1581,46 @@ class WizGUI(tk.Tk):
         with self._state_lock:
             self.data.setdefault("shortcuts", {})[shortcut_name] = shortcut
 
-        self._save_data()
-        command = f'py wiz_cli.py shortcut "{shortcut_name}"'
-        self.log(f"Shortcut '{shortcut_name}' saved. Use: {command}")
+        if not self._save_data():
+            raise ValueError("Could not save shortcut.")
+        return shortcut_name
+
+    def _choose_link_output_dir(self):
+        output_dir = filedialog.askdirectory(title="Choose where to save the shortcut link")
+        if not output_dir:
+            return None
+        return output_dir
+
+    def _create_link(self, link_name, command):
+        output_dir = self._choose_link_output_dir()
+        if not output_dir:
+            return None
+
+        try:
+            plan = build_cli_shortcut_plan(link_name, command, output_dir)
+            create_windows_shortcut(plan)
+        except (RuntimeError, OSError, ValueError) as exc:
+            messagebox.showerror("Link Error", f"Could not create link: {exc}")
+            return None
+
+        self.log(f"Windows link created for '{link_name}': {plan['path']}")
+        messagebox.showinfo("Link Created", f"Created link:\n{plan['path']}")
         self.focus_set()
+        return plan
+
+    def on_create_toggle_link(self, name_var, target_type, target):
+        link_name = (name_var.get() or "").strip()
+        if not link_name:
+            messagebox.showwarning("Invalid Shortcut", "Please enter a shortcut name.")
+            return
+
+        if not link_name.casefold().endswith(" toggle"):
+            link_name = f"{link_name} Toggle"
+
+        self._create_link(link_name, ["toggle", target_type, str(target)])
+
+    def on_create_group_toggle_link(self, group_name):
+        self._create_link(f"{group_name} Toggle", ["toggle", "group", group_name])
 
     def on_save_group(self, name_var, room_vars, device_vars):
         group_name = (name_var.get() or "").strip()

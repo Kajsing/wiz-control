@@ -235,6 +235,50 @@ def _send_state(discovery, devices, state, timeout, json_output=False):
     return 0 if not failures else 1
 
 
+def _toggle_devices(discovery, devices, timeout, json_output=False):
+    if not devices:
+        raise ValueError("No devices matched the command.")
+
+    failures = []
+    results = []
+    for device in devices:
+        status = _read_device_status(discovery, device, timeout)
+        ip = device["ip"]
+        if not isinstance(status["state"], bool):
+            failures.append(ip)
+            results.append({"ip": ip, "ok": False, "state": status["status"], "target_state": None})
+            if not json_output:
+                print(f"{ip}: {status['status']}", file=sys.stderr)
+            continue
+
+        target_state = not status["state"]
+        response = discovery.send_command(ip, "setState", {"state": target_state}, timeout=timeout)
+        if response:
+            results.append({"ip": ip, "ok": True, "state": "on" if target_state else "off", "target_state": target_state})
+            if not json_output:
+                print(f"{ip}: {'on' if target_state else 'off'}")
+        else:
+            failures.append(ip)
+            results.append({"ip": ip, "ok": False, "state": status["status"], "target_state": target_state})
+            if not json_output:
+                print(f"{ip}: failed", file=sys.stderr)
+
+    if json_output:
+        _print_json({"ok": not failures, "action": "toggle", "devices": results})
+
+    return 0 if not failures else 1
+
+
+def _target_devices(data, kind, target):
+    if kind == "device":
+        return [_resolve_device(data, target)]
+    if kind == "room":
+        room_id = _resolve_room_id(data, target)
+        return _room_devices(data, room_id)
+    _, group = _resolve_group(data, target)
+    return _group_devices(data, group)
+
+
 def _read_device_status(discovery, device, timeout):
     ip = device["ip"]
     response = discovery.send_command(ip, "getPilot", {}, timeout=timeout)
@@ -543,6 +587,10 @@ def build_parser():
     group_parser.add_argument("target", help="Saved group name.")
     group_parser.add_argument("state", choices=("on", "off"))
 
+    toggle_parser = subparsers.add_parser("toggle", help="Toggle a saved device, room, or group.")
+    toggle_parser.add_argument("kind", choices=("device", "room", "group"))
+    toggle_parser.add_argument("target", help="Device, room, or group name/identifier.")
+
     status_parser = subparsers.add_parser("status", help="Read current status for a saved device, room, or group.")
     status_parser.add_argument("kind", choices=("device", "room", "group"))
     status_parser.add_argument("target", help="Device, room, or group name/identifier.")
@@ -629,6 +677,14 @@ def run_command(args, discovery=None):
             discovery,
             _group_devices(data, group),
             args.state == "on",
+            args.command_timeout,
+            json_output=args.json_output,
+        )
+
+    if args.command == "toggle":
+        return _toggle_devices(
+            discovery,
+            _target_devices(data, args.kind, args.target),
             args.command_timeout,
             json_output=args.json_output,
         )

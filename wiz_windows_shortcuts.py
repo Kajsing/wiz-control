@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import subprocess
@@ -41,11 +42,15 @@ def create_windows_shortcut(plan):
     shortcut_path = Path(plan["path"])
     shortcut_path.parent.mkdir(parents=True, exist_ok=True)
 
-    powershell_script = """
-$shortcutPath = $args[0]
-$targetPath = $args[1]
-$arguments = $args[2]
-$workingDirectory = $args[3]
+    plan_json = json.dumps(plan)
+    powershell_script = f"""
+$plan = ConvertFrom-Json @'
+{plan_json}
+'@
+$shortcutPath = $plan.path
+$targetPath = $plan.target
+$arguments = $plan.arguments
+$workingDirectory = $plan.working_dir
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $targetPath
@@ -53,18 +58,15 @@ $shortcut.Arguments = $arguments
 $shortcut.WorkingDirectory = $workingDirectory
 $shortcut.Save()
 """
+    encoded_script = base64.b64encode(powershell_script.encode("utf-16le")).decode("ascii")
     result = subprocess.run(
         [
             "powershell",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
-            "-Command",
-            powershell_script,
-            plan["path"],
-            plan["target"],
-            plan["arguments"],
-            plan["working_dir"],
+            "-EncodedCommand",
+            encoded_script,
         ],
         capture_output=True,
         text=True,
