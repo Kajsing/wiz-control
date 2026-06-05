@@ -55,7 +55,7 @@ cd wiz-control
 Creating a virtual environment helps manage dependencies and keep your project isolated.
 
 ```bash
-python3 -m venv .venv
+py -m venv .venv
 ```
 
 Activate the virtual environment:
@@ -89,7 +89,7 @@ This project currently relies only on the Python standard library. If you mainta
 To start the WiZ Smart Bulb Manager, navigate to the project directory and run:
 
 ```bash
-python3 wiz_gui.py
+py wiz_gui.py
 ```
 
 ### Command Line Control
@@ -97,12 +97,12 @@ python3 wiz_gui.py
 Use `wiz_cli.py` to control devices already discovered and saved by the GUI:
 
 ```bash
-python3 wiz_cli.py list devices
-python3 wiz_cli.py list rooms
-python3 wiz_cli.py list shortcuts
-python3 wiz_cli.py device "192.168.87.10" on
-python3 wiz_cli.py room "Living Room" off
-python3 wiz_cli.py shortcut "Desk Lamp On"
+py wiz_cli.py list devices
+py wiz_cli.py list rooms
+py wiz_cli.py list shortcuts
+py wiz_cli.py device "192.168.87.10" on
+py wiz_cli.py room "Living Room" off
+py wiz_cli.py shortcut "Desk Lamp On"
 ```
 
 Shortcuts are saved from the GUI beside each room and device. Enter a base name,
@@ -110,10 +110,10 @@ then select **Save On** or **Save Off**; the app stores names such as
 `Desk Lamp On` and `Desk Lamp Off`. The CLI reads the same `wiz_data.json` file,
 so discover and organize bulbs in the GUI first.
 
-For a Windows taskbar shortcut targeting this WSL checkout, use a command like:
+For a Windows taskbar shortcut, set the shortcut target to a command like:
 
 ```powershell
-wsl.exe -d Ubuntu-22.04 -- bash -lc "cd /home/kajsing/projects/wiz-control && python3 wiz_cli.py shortcut 'Desk Lamp On'"
+py "C:\project\wiz-control\wiz_cli.py" shortcut "Desk Lamp On"
 ```
 
 ### Using the Application

@@ -4,7 +4,8 @@ import tempfile
 import threading
 
 
-DATA_FILE = "wiz_data.json"
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(PROJECT_DIR, "wiz_data.json")
 DATA_FILE_LOCK = threading.Lock()
 
 

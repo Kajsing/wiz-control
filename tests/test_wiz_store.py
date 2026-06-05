@@ -1,9 +1,14 @@
 import unittest
+from pathlib import Path
 
-from wiz_store import normalize_data
+from wiz_store import DATA_FILE, normalize_data
 
 
 class WizStoreTests(unittest.TestCase):
+    def test_default_data_file_lives_next_to_project_modules(self):
+        self.assertEqual(Path(DATA_FILE).name, "wiz_data.json")
+        self.assertEqual(Path(DATA_FILE).parent, Path(__file__).resolve().parent.parent)
+
     def test_normalize_data_adds_shortcuts_container(self):
         data = normalize_data({"rooms": {}, "devices": {}})
 
