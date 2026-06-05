@@ -277,7 +277,7 @@ class WizCliTests(unittest.TestCase):
         saved = json.loads(data_file.read_text())
         self.assertEqual(exit_code, 0)
         self.assertEqual(discovery.discovery_timeouts, [10])
-        self.assertEqual(saved["devices"]["192.168.1.10"]["moduleName"], "Desk Lamp")
+        self.assertEqual(saved["devices"]["192.168.1.10"]["moduleName"], "Old Name")
         self.assertEqual(saved["devices"]["192.168.1.10"]["roomId"], "2")
         self.assertEqual(saved["devices"]["192.168.1.10"]["preferences"], {"dimming": 40})
         self.assertIn("192.168.1.11", saved["devices"])

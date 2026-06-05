@@ -6,7 +6,7 @@ import threading
 import time
 
 from wiz_discovery import WizDiscovery
-from wiz_store import DATA_FILE, build_device_record, load_data, save_data
+from wiz_store import DATA_FILE, build_device_record, build_group_record, load_data, save_data
 
 
 def _casefold(value):
@@ -222,9 +222,7 @@ def _run_save_group(data, data_file, name, rooms, devices):
     device_ips = [_resolve_device(data, device)["ip"] for device in devices]
 
     data.setdefault("groups", {})[group_name] = {
-        "label": group_name,
-        "rooms": room_ids,
-        "devices": device_ips,
+        **build_group_record(group_name, room_ids, device_ips),
     }
     save_data(data, data_file)
 

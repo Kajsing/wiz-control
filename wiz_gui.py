@@ -11,23 +11,27 @@ from wiz_discovery import WizDiscovery
 from wiz_store import (
     DATA_FILE,
     build_device_record,
+    build_group_record,
+    describe_group,
     load_data as load_store_data,
     normalize_data,
+    rename_generic_room_devices,
     save_data as save_store_data,
 )
 
-BACKGROUND_COLOR = "#f3f4f6"
-SURFACE_COLOR = "#ffffff"
-ACCENT_COLOR = "#6366f1"
-ACCENT_HOVER_COLOR = "#4f46e5"
-SECONDARY_COLOR = "#e5e7eb"
-DANGER_COLOR = "#f87171"
-DANGER_HOVER_COLOR = "#ef4444"
-TEXT_COLOR = "#111827"
-MUTED_TEXT_COLOR = "#6b7280"
-BORDER_COLOR = "#d1d5db"
-LOG_BACKGROUND_COLOR = "#111827"
-PRESET_BUTTON_COLOR = "#dbeafe"
+BACKGROUND_COLOR = "#0b1020"
+SURFACE_COLOR = "#121a2b"
+ACCENT_COLOR = "#38bdf8"
+ACCENT_HOVER_COLOR = "#0ea5e9"
+SECONDARY_COLOR = "#243244"
+DANGER_COLOR = "#dc2626"
+DANGER_HOVER_COLOR = "#b91c1c"
+TEXT_COLOR = "#e5eefb"
+MUTED_TEXT_COLOR = "#93a4b8"
+BORDER_COLOR = "#263348"
+LOG_BACKGROUND_COLOR = "#050812"
+PRESET_BUTTON_COLOR = "#1e3a5f"
+FIELD_COLOR = "#0f172a"
 
 BRIGHTNESS_MIN = 10
 BRIGHTNESS_MAX = 100
@@ -97,7 +101,7 @@ class WizGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("WiZ Device Manager")
-        self.geometry("800x600")
+        self._set_initial_geometry()
         self.resizable(True, True)
         self._main_thread = threading.current_thread()
         self._state_lock = threading.RLock()
@@ -106,6 +110,7 @@ class WizGUI(tk.Tk):
         self._worker_threads = set()
         self._ui_queue = queue.Queue()
         self._closing = False
+        self._groups_expanded = False
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
         self._configure_style()
@@ -115,11 +120,24 @@ class WizGUI(tk.Tk):
         self.active_ips = set()
         self.device_status_cache = {ip: None for ip in self.data["devices"]}
         self._refresh_scheduled = False
+        self._status_refresh_scheduled = False
+        self._status_label_widgets = {}
 
         self.create_widgets()
         self.refresh_control_frame()
         self.after(50, self._process_ui_queue)
         self.stop_event = self.update_status_periodically()
+
+    def _set_initial_geometry(self):
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        width = min(1180, max(900, int(screen_width * 0.86)))
+        height = min(900, max(680, int(screen_height * 0.84)))
+        width = min(width, max(640, screen_width - 80))
+        height = min(height, max(480, screen_height - 100))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _configure_style(self):
         self.configure(bg=BACKGROUND_COLOR)
@@ -154,16 +172,16 @@ class WizGUI(tk.Tk):
         self.style.configure("Card.TLabel", background=SURFACE_COLOR, foreground=TEXT_COLOR)
         self.style.configure("CardMuted.TLabel", background=SURFACE_COLOR, foreground=MUTED_TEXT_COLOR)
         self.style.configure("Muted.TLabel", background=BACKGROUND_COLOR, foreground=MUTED_TEXT_COLOR)
-        self.style.configure("Badge.TLabel", background=ACCENT_COLOR, foreground="white", padding=(8, 2))
+        self.style.configure("Badge.TLabel", background=ACCENT_COLOR, foreground="#03111f", padding=(8, 2))
 
         self.style.configure("Divider.TSeparator", background=BORDER_COLOR)
 
         # Buttons
-        self.style.configure("Primary.TButton", background=ACCENT_COLOR, foreground="white", padding=(12, 6), borderwidth=0, focusthickness=0)
-        self.style.map("Primary.TButton", background=[("active", ACCENT_HOVER_COLOR), ("disabled", "#a5b4fc")], foreground=[("disabled", "#e0e7ff")])
+        self.style.configure("Primary.TButton", background=ACCENT_COLOR, foreground="#03111f", padding=(12, 6), borderwidth=0, focusthickness=0)
+        self.style.map("Primary.TButton", background=[("active", ACCENT_HOVER_COLOR), ("disabled", "#1e3a5f")], foreground=[("disabled", MUTED_TEXT_COLOR)])
 
         self.style.configure("Secondary.TButton", background=SECONDARY_COLOR, foreground=TEXT_COLOR, padding=(10, 5), borderwidth=0)
-        self.style.map("Secondary.TButton", background=[("active", "#d1d5db"), ("disabled", SECONDARY_COLOR)])
+        self.style.map("Secondary.TButton", background=[("active", "#334155"), ("disabled", SECONDARY_COLOR)])
 
         self.style.configure("Ghost.TButton", background=BACKGROUND_COLOR, foreground=TEXT_COLOR, padding=(10, 5), borderwidth=0)
         self.style.map("Ghost.TButton", background=[("active", SECONDARY_COLOR)])
@@ -172,38 +190,64 @@ class WizGUI(tk.Tk):
         self.style.map("Danger.TButton", background=[("active", DANGER_HOVER_COLOR)])
 
         self.style.configure("Preset.TButton", background=PRESET_BUTTON_COLOR, foreground=ACCENT_COLOR, padding=(8, 3), borderwidth=0)
-        self.style.map("Preset.TButton", background=[("active", "#bfdbfe")])
+        self.style.map("Preset.TButton", background=[("active", "#075985")])
 
         self.style.configure("Toggle.TButton", background=SURFACE_COLOR, foreground=ACCENT_COLOR, padding=(0, 0), borderwidth=0)
         self.style.map("Toggle.TButton", foreground=[("active", ACCENT_HOVER_COLOR)])
 
         # Form controls
-        self.style.configure("App.TEntry", fieldbackground=SURFACE_COLOR, foreground=TEXT_COLOR, padding=(6, 4))
+        self.style.configure("App.TEntry", fieldbackground=FIELD_COLOR, foreground=TEXT_COLOR, insertcolor=TEXT_COLOR, padding=(6, 4), bordercolor=BORDER_COLOR)
         self.style.configure(
             "Title.TEntry",
-            fieldbackground=SURFACE_COLOR,
+            fieldbackground=FIELD_COLOR,
             foreground=TEXT_COLOR,
             font=self.room_title_font,
             padding=(8, 6),
+            bordercolor=BORDER_COLOR,
         )
         self.style.configure(
             "App.TCombobox",
-            fieldbackground=SURFACE_COLOR,
-            background=SURFACE_COLOR,
+            fieldbackground=FIELD_COLOR,
+            background=FIELD_COLOR,
             foreground=TEXT_COLOR,
             padding=6,
             arrowsize=14,
+            bordercolor=BORDER_COLOR,
         )
         self.style.map(
             "App.TCombobox",
-            fieldbackground=[("readonly", SURFACE_COLOR)],
+            fieldbackground=[("readonly", FIELD_COLOR)],
             foreground=[("readonly", TEXT_COLOR)],
+            selectbackground=[("readonly", SECONDARY_COLOR)],
+            selectforeground=[("readonly", TEXT_COLOR)],
         )
 
-        self.style.configure("Vertical.TScrollbar", background=BACKGROUND_COLOR, troughcolor=BACKGROUND_COLOR, bordercolor=BACKGROUND_COLOR)
+        self.style.configure("TCheckbutton", background=SURFACE_COLOR, foreground=TEXT_COLOR)
+        self.style.map(
+            "TCheckbutton",
+            background=[("active", SURFACE_COLOR)],
+            foreground=[("active", TEXT_COLOR), ("disabled", MUTED_TEXT_COLOR)],
+        )
+
+        self.style.configure(
+            "Horizontal.TScale",
+            background=SURFACE_COLOR,
+            troughcolor=FIELD_COLOR,
+            bordercolor=SURFACE_COLOR,
+            lightcolor=ACCENT_COLOR,
+            darkcolor=ACCENT_COLOR,
+        )
+
+        self.style.configure(
+            "Vertical.TScrollbar",
+            background=SECONDARY_COLOR,
+            troughcolor=BACKGROUND_COLOR,
+            bordercolor=BACKGROUND_COLOR,
+            arrowcolor=MUTED_TEXT_COLOR,
+        )
 
     def create_widgets(self):
-        self.main_container = ttk.Frame(self, style="App.TFrame", padding=(20, 10, 20, 20))
+        self.main_container = ttk.Frame(self, style="App.TFrame", padding=(16, 10, 16, 16))
         self.main_container.pack(fill="both", expand=True)
 
         header_frame = ttk.Frame(self.main_container, style="Toolbar.TFrame")
@@ -235,7 +279,7 @@ class WizGUI(tk.Tk):
         self.log_toggle = ttk.Button(action_frame, text="Show Logs", style="Ghost.TButton", command=self.toggle_logs)
         self.log_toggle.pack(side="left")
 
-        ttk.Separator(self.main_container, style="Divider.TSeparator").pack(fill="x", pady=(16, 16))
+        ttk.Separator(self.main_container, style="Divider.TSeparator").pack(fill="x", pady=(12, 12))
 
         self.output_container = ttk.Frame(self.main_container, style="Log.TFrame", padding=12)
         self.output_box = scrolledtext.ScrolledText(self.output_container, width=80, height=8, state="disabled")
@@ -273,8 +317,7 @@ class WizGUI(tk.Tk):
             lambda event: self.control_canvas.itemconfigure(self._control_frame_id, width=event.width),
         )
 
-        self.control_frame.bind("<Enter>", self._bind_canvas_scroll)
-        self.control_frame.bind("<Leave>", self._unbind_canvas_scroll)
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
 
     def _run_on_ui_thread(self, callback, *args, **kwargs):
         if self._closing:
@@ -361,7 +404,7 @@ class WizGUI(tk.Tk):
                     self.log(f"Error while controlling device {ip}: {e}")
 
             if refresh_needed:
-                self.schedule_refresh()
+                self.schedule_status_refresh()
 
         self._start_worker(toggle, "toggle-room")
 
@@ -374,7 +417,7 @@ class WizGUI(tk.Tk):
                     with self._state_lock:
                         self.device_status_cache[ip] = state
                         self.active_ips.add(ip)
-                    self.schedule_refresh()
+                    self.schedule_status_refresh()
                 else:
                     self.log(f"Could not update device {ip}.")
                 time.sleep(0.2)  # Give the device time to update
@@ -382,6 +425,35 @@ class WizGUI(tk.Tk):
                 self.log(f"Error while controlling device {ip}: {e}")
 
         self._start_worker(toggle, "toggle-device")
+
+    def on_toggle_group(self, group_name, group, state):
+        devices = self._devices_for_group(group)
+        if not devices:
+            messagebox.showwarning("Empty Group", f"Group '{group_name}' does not contain any saved devices.")
+            return
+
+        def toggle():
+            updated_count = 0
+            for device in devices:
+                ip = device["ip"]
+                try:
+                    response = self.discovery.send_command(ip, "setState", {"state": state})
+                    if response:
+                        updated_count += 1
+                        with self._state_lock:
+                            self.device_status_cache[ip] = state
+                            self.active_ips.add(ip)
+                    else:
+                        self.log(f"Could not update device {ip} in group '{group_name}'.")
+                except Exception as exc:
+                    self.log(f"Error while controlling device {ip} in group '{group_name}': {exc}")
+
+            if updated_count:
+                state_label = "on" if state else "off"
+                self.log(f"Group '{group_name}' turned {state_label} ({updated_count} device(s)).")
+                self.schedule_status_refresh()
+
+        self._start_worker(toggle, "toggle-group")
 
     def on_remove_device(self, ip):
         removed = False
@@ -411,13 +483,50 @@ class WizGUI(tk.Tk):
 
         self._run_on_ui_thread(self._perform_refresh)
 
+    def schedule_status_refresh(self):
+        if self._closing:
+            return
+
+        with self._refresh_lock:
+            if self._status_refresh_scheduled:
+                return
+            self._status_refresh_scheduled = True
+
+        self._run_on_ui_thread(self._perform_status_refresh)
+
     def _perform_refresh(self):
         with self._refresh_lock:
             self._refresh_scheduled = False
 
         if self._closing:
             return
+        if self._should_defer_refresh():
+            with self._refresh_lock:
+                self._refresh_scheduled = True
+            self.after(500, self._perform_refresh)
+            return
         self.refresh_control_frame()
+
+    def _perform_status_refresh(self):
+        with self._refresh_lock:
+            self._status_refresh_scheduled = False
+
+        if self._closing:
+            return
+        self.refresh_status_labels()
+
+    def _should_defer_refresh(self):
+        focus_widget = self.focus_get()
+        if not focus_widget:
+            return False
+
+        try:
+            widget_class = focus_widget.winfo_class()
+        except tk.TclError:
+            return False
+
+        editable_classes = {"Entry", "TEntry", "Spinbox", "TSpinbox", "Text", "TCombobox", "Combobox"}
+        return widget_class in editable_classes
 
     def _get_device_preferences(self, ip):
         with self._state_lock:
@@ -448,6 +557,50 @@ class WizGUI(tk.Tk):
                 room_settings[room_id] = settings
             return settings
 
+    def _get_groups(self):
+        with self._state_lock:
+            groups = self.data.setdefault("groups", {})
+            return {
+                name: copy.deepcopy(group)
+                for name, group in groups.items()
+                if isinstance(group, dict)
+            }
+
+    def _devices_for_group(self, group):
+        with self._state_lock:
+            devices_by_ip = copy.deepcopy(self.data.get("devices", {}))
+
+        devices = []
+        seen_ips = set()
+
+        for room_id in group.get("rooms", []):
+            for ip, record in devices_by_ip.items():
+                if str(record.get("roomId", "Unknown")) != str(room_id):
+                    continue
+                if ip in seen_ips:
+                    continue
+                devices.append(record)
+                seen_ips.add(ip)
+
+        for target in group.get("devices", []):
+            record = devices_by_ip.get(target)
+            if not record:
+                matches = [
+                    candidate
+                    for candidate in devices_by_ip.values()
+                    if str(candidate.get("moduleName", "")).casefold() == str(target).casefold()
+                ]
+                record = matches[0] if len(matches) == 1 else None
+            if not record:
+                continue
+            ip = record["ip"]
+            if ip in seen_ips:
+                continue
+            devices.append(record)
+            seen_ips.add(ip)
+
+        return devices
+
     def _format_scene_choice(self, scene_id):
         if scene_id in SCENE_MAP:
             return f"{scene_id:02d} - {SCENE_MAP[scene_id]}"
@@ -465,26 +618,49 @@ class WizGUI(tk.Tk):
     def _update_scale_label(self, label_var, value, suffix=""):
         label_var.set(f"{int(float(value))}{suffix}")
 
+    def _clear_focus_on_return(self, event):
+        self.focus_set()
+        return "break"
+
+    def _save_room_name_on_return(self, event, room_id, name_var):
+        self.on_save_room_name(room_id, name_var)
+        return "break"
+
     def toggle_logs(self):
         if self.output_visible:
             self.output_container.pack_forget()
             self.output_visible = False
             self.log_toggle.config(text="Show Logs")
         else:
-            self.output_container.pack(fill='both', expand=False, pady=(0, 16), before=self.control_container)
+            self.output_container.pack(fill='both', expand=False, pady=(0, 12), before=self.control_container)
             self.output_visible = True
             self.log_toggle.config(text="Hide Logs")
 
     def _bind_canvas_scroll(self, _event):
-        self.control_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        pass
 
     def _unbind_canvas_scroll(self, _event):
-        self.control_canvas.unbind_all("<MouseWheel>")
+        pass
 
     def _on_mousewheel(self, event):
         if event.delta == 0:
             return
+        if not self._pointer_within_widget(self.control_container):
+            return
         self.control_canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    def _pointer_within_widget(self, widget):
+        try:
+            pointer_x = self.winfo_pointerx()
+            pointer_y = self.winfo_pointery()
+            widget_x = widget.winfo_rootx()
+            widget_y = widget.winfo_rooty()
+            return (
+                widget_x <= pointer_x <= widget_x + widget.winfo_width()
+                and widget_y <= pointer_y <= widget_y + widget.winfo_height()
+            )
+        except tk.TclError:
+            return False
 
     def _create_collapsible_section(self, parent, title, collapsed=True):
         container = ttk.Frame(parent, style="Section.TFrame")
@@ -544,12 +720,43 @@ class WizGUI(tk.Tk):
         rooms = dict(sorted(grouped.items(), key=lambda item: item[0]))
         return rooms, active_ips, device_status_cache, room_names, room_settings
 
+    def _format_status(self, ip, active_ips, device_status_cache):
+        state = device_status_cache.get(ip)
+
+        if ip not in active_ips:
+            return "Offline", "#9ca3af"
+        if state is None:
+            return "Unknown", "#f59e0b"
+        if state:
+            return "On", "#10b981"
+        return "Off", "#ef4444"
+
+    def refresh_status_labels(self):
+        with self._state_lock:
+            active_ips = set(self.active_ips)
+            device_status_cache = dict(self.device_status_cache)
+
+        stale_ips = []
+        for ip, label in self._status_label_widgets.items():
+            try:
+                if not label.winfo_exists():
+                    stale_ips.append(ip)
+                    continue
+                state_text, state_color = self._format_status(ip, active_ips, device_status_cache)
+                label.configure(text=f"Status: {state_text}", foreground=state_color)
+            except tk.TclError:
+                stale_ips.append(ip)
+
+        for ip in stale_ips:
+            self._status_label_widgets.pop(ip, None)
+
     def discover_devices(self):
         self.log("Starting device discovery...")
         try:
             discovered = self.discovery.discover_wiz_devices()
             found_ips = [ip for ip, _ in discovered]
             with self._state_lock:
+                active_changed = self.active_ips != set(found_ips)
                 self.active_ips = set(found_ips)
 
                 updated = False
@@ -571,21 +778,31 @@ class WizGUI(tk.Tk):
 
             if updated:
                 self._save_data()
-            self.schedule_refresh()
+            if updated:
+                self.schedule_refresh()
+            elif active_changed:
+                self.schedule_status_refresh()
         except Exception as e:
             self.log(f"Error during discovery: {e}")
 
     def refresh_control_frame(self):
         for widget in self.control_frame.winfo_children():
             widget.destroy()
+        self._status_label_widgets = {}
 
         rooms, active_ips, device_status_cache, room_names, room_settings_map = self._build_view_snapshot(include_offline=True)
+        groups = self._get_groups()
+
+        self._render_group_editor(rooms, room_names, groups)
 
         if not rooms:
             empty_label = ttk.Label(self.control_frame, text="No rooms registered yet.", style="Muted.TLabel")
             empty_label.pack(pady=20)
             return
+        self._render_room_cards(rooms, active_ips, device_status_cache, room_names, room_settings_map)
 
+
+    def _render_room_cards(self, rooms, active_ips, device_status_cache, room_names, room_settings_map):
         for room_index, (room_id, devices_in_room) in enumerate(rooms.items()):
             room_name = room_names.get(room_id, f"Room {room_id}")
             room_settings = room_settings_map.get(room_id, {})
@@ -599,9 +816,9 @@ class WizGUI(tk.Tk):
                 highlightcolor=BORDER_COLOR,
                 highlightthickness=1,
             )
-            card.pack(fill="x", pady=12, padx=4)
+            card.pack(fill="x", pady=8, padx=4)
 
-            room_frame = ttk.Frame(card, style="CardContainer.TFrame", padding=16)
+            room_frame = ttk.Frame(card, style="CardContainer.TFrame", padding=12)
             room_frame.pack(fill="both", expand=True)
             room_frame.columnconfigure(0, weight=1)
 
@@ -615,9 +832,33 @@ class WizGUI(tk.Tk):
 
             name_entry = ttk.Entry(name_container, textvariable=name_var, width=28, style="Title.TEntry")
             name_entry.pack(side="left")
+            name_entry.bind("<Return>", lambda event, rid=room_id, var=name_var: self._save_room_name_on_return(event, rid, var))
 
             room_badge = ttk.Label(name_container, text=f"ID {room_id}", style="Badge.TLabel")
             room_badge.pack(side="left", padx=(12, 0))
+
+            device_count = len(devices_in_room)
+            device_count_text = f"{device_count} light" if device_count == 1 else f"{device_count} lights"
+            ttk.Label(name_container, text=device_count_text, style="CardMuted.TLabel").pack(side="left", padx=(10, 0))
+
+            room_actions = ttk.Frame(header_frame, style="CardHeader.TFrame")
+            room_actions.grid(row=0, column=1, sticky="e", padx=(12, 8))
+
+            turn_on_btn = ttk.Button(
+                room_actions,
+                text="Turn All On",
+                style="Primary.TButton",
+                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, True),
+            )
+            turn_on_btn.pack(side="left", padx=(0, 6))
+
+            turn_off_btn = ttk.Button(
+                room_actions,
+                text="Turn All Off",
+                style="Secondary.TButton",
+                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, False),
+            )
+            turn_off_btn.pack(side="left")
 
             save_btn = ttk.Button(
                 header_frame,
@@ -625,10 +866,10 @@ class WizGUI(tk.Tk):
                 style="Ghost.TButton",
                 command=lambda rid=room_id, var=name_var: self.on_save_room_name(rid, var),
             )
-            save_btn.grid(row=0, column=1, sticky="e")
+            save_btn.grid(row=0, column=2, sticky="e")
 
-            scene_frame = ttk.Frame(room_frame, style="CardHeader.TFrame")
-            scene_frame.grid(row=1, column=0, sticky="ew", pady=(12, 8))
+            room_tools_container, scene_frame = self._create_collapsible_section(room_frame, "Room Tools", collapsed=True)
+            room_tools_container.grid(row=1, column=0, sticky="ew", pady=(8, 6))
             scene_frame.columnconfigure(0, weight=1)
 
             initial_scene_choice = self._format_scene_choice(room_settings.get("sceneId"))
@@ -661,13 +902,15 @@ class WizGUI(tk.Tk):
             speed_spin = tk.Spinbox(scene_controls, from_=20, to=200, textvariable=speed_var, width=4)
             speed_spin.pack(side="left", padx=(6, 10))
             speed_spin.configure(
-                background=SURFACE_COLOR,
+                background=FIELD_COLOR,
                 foreground=TEXT_COLOR,
                 relief="flat",
                 highlightthickness=1,
                 highlightbackground=BORDER_COLOR,
                 highlightcolor=ACCENT_COLOR,
                 insertbackground=TEXT_COLOR,
+                selectbackground=SECONDARY_COLOR,
+                selectforeground=TEXT_COLOR,
             )
 
             apply_scene_btn = ttk.Button(
@@ -678,30 +921,13 @@ class WizGUI(tk.Tk):
             )
             apply_scene_btn.pack(side="left")
 
-            room_actions = ttk.Frame(scene_frame, style="CardHeader.TFrame")
-            room_actions.grid(row=0, column=1, sticky="e")
-
-            turn_on_btn = ttk.Button(
-                room_actions,
-                text="Turn All On",
-                style="Ghost.TButton",
-                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, True),
-            )
-            turn_on_btn.pack(side="left", padx=(0, 6))
-
-            turn_off_btn = ttk.Button(
-                room_actions,
-                text="Turn All Off",
-                style="Ghost.TButton",
-                command=lambda rid=room_id, d=devices_in_room: self.on_toggle_room(rid, d, False),
-            )
-            turn_off_btn.pack(side="left")
-
             room_shortcut_var = tk.StringVar(value=room_name)
             room_shortcut_frame = ttk.Frame(scene_frame, style="CardHeader.TFrame")
-            room_shortcut_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            room_shortcut_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
             ttk.Label(room_shortcut_frame, text="Shortcut", style="CardMuted.TLabel").pack(side="left")
-            ttk.Entry(room_shortcut_frame, textvariable=room_shortcut_var, width=24, style="App.TEntry").pack(side="left", padx=(8, 6))
+            room_shortcut_entry = ttk.Entry(room_shortcut_frame, textvariable=room_shortcut_var, width=24, style="App.TEntry")
+            room_shortcut_entry.pack(side="left", padx=(8, 6))
+            room_shortcut_entry.bind("<Return>", self._clear_focus_on_return)
             ttk.Button(
                 room_shortcut_frame,
                 text="Save On",
@@ -719,17 +945,7 @@ class WizGUI(tk.Tk):
                 row_offset = 2 + device_index * 2
                 ip = device["ip"]
                 module_name = device.get("moduleName", f"Device {ip}")
-                state = device_status_cache.get(ip)
-
-                if ip not in active_ips:
-                    state_text = "Offline"
-                    state_color = "#9ca3af"
-                elif state is None:
-                    state_text = "Unknown"
-                    state_color = "#f59e0b"
-                else:
-                    state_text = "On" if state else "Off"
-                    state_color = "#10b981" if state else "#ef4444"
+                state_text, state_color = self._format_status(ip, active_ips, device_status_cache)
 
                 preferences = device.get("preferences", {})
                 if not isinstance(preferences, dict):
@@ -766,7 +982,7 @@ class WizGUI(tk.Tk):
                 except (TypeError, ValueError):
                     blue_value = 0
 
-                device_frame = ttk.Frame(room_frame, style="CardBody.TFrame", padding=(0, 8))
+                device_frame = ttk.Frame(room_frame, style="CardBody.TFrame", padding=(0, 6))
                 device_frame.grid(row=row_offset, column=0, sticky="ew")
                 device_frame.columnconfigure(1, weight=1)
 
@@ -780,6 +996,7 @@ class WizGUI(tk.Tk):
                     foreground=state_color,
                 )
                 status_label.grid(row=0, column=1, sticky="w", padx=10)
+                self._status_label_widgets[ip] = status_label
 
                 on_button = ttk.Button(device_frame, text="Turn On", style="Primary.TButton", command=lambda i=ip: self.on_toggle_device(i, True))
                 on_button.grid(row=0, column=2, padx=5)
@@ -790,11 +1007,17 @@ class WizGUI(tk.Tk):
                 remove_button = ttk.Button(device_frame, text="Remove", style="Danger.TButton", command=lambda i=ip: self.on_remove_device(i))
                 remove_button.grid(row=0, column=4, padx=5)
 
+                details_container, details_frame = self._create_collapsible_section(device_frame, "Details", collapsed=True)
+                details_container.grid(row=1, column=0, columnspan=5, sticky="we", pady=(6, 0))
+                details_frame.columnconfigure(1, weight=1)
+
                 device_shortcut_var = tk.StringVar(value=module_name)
-                device_shortcut_frame = ttk.Frame(device_frame, style="CardBody.TFrame")
-                device_shortcut_frame.grid(row=1, column=0, columnspan=5, sticky="w", pady=(8, 0))
+                device_shortcut_frame = ttk.Frame(details_frame, style="SectionBody.TFrame")
+                device_shortcut_frame.grid(row=0, column=0, columnspan=4, sticky="w")
                 ttk.Label(device_shortcut_frame, text="Shortcut", style="CardMuted.TLabel").pack(side="left")
-                ttk.Entry(device_shortcut_frame, textvariable=device_shortcut_var, width=24, style="App.TEntry").pack(side="left", padx=(8, 6))
+                device_shortcut_entry = ttk.Entry(device_shortcut_frame, textvariable=device_shortcut_var, width=24, style="App.TEntry")
+                device_shortcut_entry.pack(side="left", padx=(8, 6))
+                device_shortcut_entry.bind("<Return>", self._clear_focus_on_return)
                 ttk.Button(
                     device_shortcut_frame,
                     text="Save On",
@@ -808,8 +1031,8 @@ class WizGUI(tk.Tk):
                     command=lambda var=device_shortcut_var, target_ip=ip: self.on_save_state_shortcut(var, "device", target_ip, False),
                 ).pack(side="left")
 
-                color_container, color_frame = self._create_collapsible_section(device_frame, "Color Controls", collapsed=True)
-                color_container.grid(row=2, column=0, columnspan=5, sticky="we", pady=(8, 0))
+                color_frame = ttk.Frame(details_frame, style="SectionBody.TFrame")
+                color_frame.grid(row=1, column=0, columnspan=4, sticky="we", pady=(10, 0))
                 color_frame.columnconfigure(1, weight=1)
 
                 brightness_var = tk.IntVar(value=brightness_value)
@@ -906,6 +1129,157 @@ class WizGUI(tk.Tk):
                 if device_index < len(devices_in_room) - 1:
                     ttk.Separator(room_frame, style="Divider.TSeparator").grid(row=row_offset + 1, column=0, sticky="ew", pady=(4, 0))
 
+
+    def _render_group_editor(self, rooms, room_names, groups):
+        card = tk.Frame(
+            self.control_frame,
+            bg=SURFACE_COLOR,
+            bd=0,
+            highlightbackground=BORDER_COLOR,
+            highlightcolor=BORDER_COLOR,
+            highlightthickness=1,
+        )
+        card.pack(fill="x", pady=8, padx=4)
+
+        frame = ttk.Frame(card, style="CardContainer.TFrame", padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(frame, style="CardHeader.TFrame")
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="Groups", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w")
+        summary = f"{len(groups)} saved" if groups else "No saved groups"
+        ttk.Label(header, text=summary, style="CardMuted.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        toggle_text = "Hide Groups" if self._groups_expanded else "Show Groups"
+        ttk.Button(
+            header,
+            text=toggle_text,
+            style="Ghost.TButton",
+            command=self.toggle_group_editor,
+        ).grid(row=0, column=2, sticky="e")
+
+        if not self._groups_expanded:
+            return
+
+        name_frame = ttk.Frame(frame, style="CardBody.TFrame")
+        name_frame.grid(row=1, column=0, sticky="ew", pady=(10, 8))
+        ttk.Label(name_frame, text="Name", style="CardMuted.TLabel").pack(side="left")
+        group_name_var = tk.StringVar(value="Group 1")
+        group_name_entry = ttk.Entry(name_frame, textvariable=group_name_var, width=28, style="App.TEntry")
+        group_name_entry.pack(side="left", padx=(8, 10))
+        group_name_entry.bind("<Return>", self._clear_focus_on_return)
+
+        room_vars = {}
+        device_vars = {}
+
+        selector_frame = ttk.Frame(frame, style="CardBody.TFrame")
+        selector_frame.grid(row=2, column=0, sticky="ew")
+        selector_frame.columnconfigure(0, weight=1)
+        selector_frame.columnconfigure(1, weight=1)
+
+        rooms_frame = ttk.Frame(selector_frame, style="CardBody.TFrame")
+        rooms_frame.grid(row=0, column=0, sticky="nw", padx=(0, 20))
+        ttk.Label(rooms_frame, text="Rooms", style="CardMuted.TLabel").pack(anchor="w")
+
+        for room_id, devices_in_room in rooms.items():
+            room_label = f"{room_names.get(room_id, f'Room {room_id}')} ({len(devices_in_room)})"
+            var = tk.BooleanVar(value=False)
+            room_vars[room_id] = var
+            ttk.Checkbutton(rooms_frame, text=room_label, variable=var).pack(anchor="w", pady=(4, 0))
+
+        devices_frame = ttk.Frame(selector_frame, style="CardBody.TFrame")
+        devices_frame.grid(row=0, column=1, sticky="nw")
+        ttk.Label(devices_frame, text="Devices", style="CardMuted.TLabel").pack(anchor="w")
+
+        for devices_in_room in rooms.values():
+            for device in devices_in_room:
+                ip = device["ip"]
+                var = tk.BooleanVar(value=False)
+                device_vars[ip] = var
+                label = f"{device.get('moduleName', f'Device {ip}')} ({ip})"
+                ttk.Checkbutton(devices_frame, text=label, variable=var).pack(anchor="w", pady=(4, 0))
+
+        actions_frame = ttk.Frame(frame, style="CardBody.TFrame")
+        actions_frame.grid(row=3, column=0, sticky="w", pady=(10, 8))
+        ttk.Button(
+            actions_frame,
+            text="Save Group",
+            style="Primary.TButton",
+            command=lambda: self.on_save_group(group_name_var, room_vars, device_vars),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions_frame,
+            text="Delete Group",
+            style="Danger.TButton",
+            command=lambda: self.on_delete_group(group_name_var),
+        ).pack(side="left")
+
+        ttk.Separator(frame, style="Divider.TSeparator").grid(row=4, column=0, sticky="ew", pady=(8, 8))
+
+        if not groups:
+            ttk.Label(frame, text="No groups saved yet.", style="CardMuted.TLabel").grid(row=5, column=0, sticky="w")
+            return
+
+        device_records = {
+            device["ip"]: device
+            for devices_in_room in rooms.values()
+            for device in devices_in_room
+        }
+        for row_index, (group_name, group) in enumerate(sorted(groups.items()), start=5):
+            group_row = ttk.Frame(frame, style="CardBody.TFrame")
+            group_row.grid(row=row_index, column=0, sticky="ew", pady=(2, 0))
+            group_row.columnconfigure(1, weight=1)
+            ttk.Label(group_row, text=group_name, style="Card.TLabel", width=20).grid(row=0, column=0, sticky="w")
+            description = describe_group(group, room_names=room_names, devices=device_records)
+            ttk.Label(group_row, text=description, style="CardMuted.TLabel").grid(row=0, column=1, sticky="w", padx=(8, 0))
+            ttk.Button(
+                group_row,
+                text="On",
+                style="Primary.TButton",
+                command=lambda name=group_name, group_data=copy.deepcopy(group): self.on_toggle_group(
+                    name,
+                    group_data,
+                    True,
+                ),
+            ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+            ttk.Button(
+                group_row,
+                text="Off",
+                style="Secondary.TButton",
+                command=lambda name=group_name, group_data=copy.deepcopy(group): self.on_toggle_group(
+                    name,
+                    group_data,
+                    False,
+                ),
+            ).grid(row=0, column=3, sticky="e", padx=(6, 0))
+            ttk.Button(
+                group_row,
+                text="Load",
+                style="Ghost.TButton",
+                command=lambda name=group_name, group_data=copy.deepcopy(group): self._load_group_selection(
+                    group_name_var,
+                    room_vars,
+                    device_vars,
+                    name,
+                    group_data,
+                ),
+            ).grid(row=0, column=4, sticky="e", padx=(6, 0))
+
+    def _load_group_selection(self, group_name_var, room_vars, device_vars, group_name, group):
+        group_name_var.set(group_name)
+        selected_rooms = set(group.get("rooms", []))
+        selected_devices = set(group.get("devices", []))
+
+        for room_id, var in room_vars.items():
+            var.set(room_id in selected_rooms)
+        for ip, var in device_vars.items():
+            var.set(ip in selected_devices)
+
+    def toggle_group_editor(self):
+        self._groups_expanded = not self._groups_expanded
+        self.schedule_refresh()
+
     def on_apply_white(self, ip, brightness_var, temperature_var):
         try:
             brightness = int(float(brightness_var.get()))
@@ -928,7 +1302,7 @@ class WizGUI(tk.Tk):
                         self.device_status_cache[ip] = True
                         self.active_ips.add(ip)
                     self._store_device_preferences(ip, dimming=brightness, temperature=temperature)
-                    self.schedule_refresh()
+                    self.schedule_status_refresh()
                 else:
                     self.log(f"Could not apply white settings to {ip}.")
             except Exception as exc:
@@ -969,7 +1343,7 @@ class WizGUI(tk.Tk):
                         self.device_status_cache[ip] = True
                         self.active_ips.add(ip)
                     self._store_device_preferences(ip, dimming=brightness, r=red, g=green, b=blue)
-                    self.schedule_refresh()
+                    self.schedule_status_refresh()
                 else:
                     self.log(f"Could not apply color to {ip}.")
             except Exception as exc:
@@ -1056,7 +1430,7 @@ class WizGUI(tk.Tk):
                 self._save_data()
                 scene_name = SCENE_MAP.get(scene_id, "Scene")
                 self.log(f"Applied scene {scene_id} ({scene_name}) to room {room_id}.")
-                self.schedule_refresh()
+                self.schedule_status_refresh()
             else:
                 self.log(f"Failed to apply scene {scene_id} to room {room_id}.")
 
@@ -1106,7 +1480,7 @@ class WizGUI(tk.Tk):
                         self.log(f"Error while updating status for {ip}: {e}")
 
                 if state_changed:
-                    self.schedule_refresh()
+                    self.schedule_status_refresh()
 
                 if stop_event.wait(5):
                     break
@@ -1136,8 +1510,54 @@ class WizGUI(tk.Tk):
             self.data.setdefault("shortcuts", {})[shortcut_name] = shortcut
 
         self._save_data()
-        command = f'python wiz_cli.py shortcut "{shortcut_name}"'
+        command = f'py wiz_cli.py shortcut "{shortcut_name}"'
         self.log(f"Shortcut '{shortcut_name}' saved. Use: {command}")
+        self.focus_set()
+
+    def on_save_group(self, name_var, room_vars, device_vars):
+        group_name = (name_var.get() or "").strip()
+        selected_rooms = [
+            room_id
+            for room_id, var in room_vars.items()
+            if var.get()
+        ]
+        selected_devices = [
+            ip
+            for ip, var in device_vars.items()
+            if var.get()
+        ]
+
+        try:
+            group = build_group_record(group_name, selected_rooms, selected_devices)
+        except ValueError as exc:
+            messagebox.showwarning("Invalid Group", str(exc))
+            return
+
+        with self._state_lock:
+            self.data.setdefault("groups", {})[group_name] = group
+
+        self._save_data()
+        self.log(f"Group '{group_name}' saved.")
+        self.focus_set()
+        self.schedule_refresh()
+
+    def on_delete_group(self, name_var):
+        group_name = (name_var.get() or "").strip()
+        if not group_name:
+            messagebox.showwarning("Invalid Group", "Please enter a group name.")
+            return
+
+        with self._state_lock:
+            groups = self.data.setdefault("groups", {})
+            if group_name not in groups:
+                messagebox.showwarning("Group Not Found", f"Group '{group_name}' does not exist.")
+                return
+            del groups[group_name]
+
+        self._save_data()
+        self.log(f"Group '{group_name}' deleted.")
+        self.focus_set()
+        self.schedule_refresh()
 
     def on_save_room_name(self, room_id, name_var):
         new_name = (name_var.get() or "").strip()
@@ -1147,8 +1567,12 @@ class WizGUI(tk.Tk):
 
         with self._state_lock:
             self.data["rooms"][room_id] = new_name
+            renamed = rename_generic_room_devices(self.data, room_id, new_name)
         self._save_data()
         self.log(f"Room {room_id} renamed to {new_name}.")
+        if renamed:
+            self.log(f"Renamed {renamed} unnamed light(s) in {new_name}.")
+        self.focus_set()
         self.schedule_refresh()
 
     def on_close(self):

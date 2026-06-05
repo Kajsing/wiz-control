@@ -74,11 +74,12 @@ def build_device_record(ip, info, existing=None):
         raw_info = {}
 
     result = raw_info.get("result", {}) if isinstance(raw_info, dict) else {}
-    module_name = (
-        result.get("moduleName")
-        or existing.get("moduleName")
-        or f"Device {ip}"
-    )
+    existing_name = existing.get("moduleName")
+    discovered_name = result.get("moduleName")
+    if existing_name and not is_generic_device_name(existing_name, ip):
+        module_name = existing_name
+    else:
+        module_name = discovered_name or existing_name or f"Device {ip}"
     room_id = result.get("roomId")
     if room_id is None:
         room_id = existing.get("roomId", "Unknown")
@@ -154,6 +155,112 @@ def _normalize_groups(raw_groups):
         }
 
     return normalized
+
+
+def build_group_record(name, rooms, devices):
+    group_name = str(name).strip()
+    room_ids = [str(room).strip() for room in rooms if str(room).strip()]
+    device_ips = [str(device).strip() for device in devices if str(device).strip()]
+
+    if not group_name:
+        raise ValueError("Group name cannot be empty.")
+    if not room_ids and not device_ips:
+        raise ValueError("A group must include at least one room or device.")
+
+    return {
+        "label": group_name,
+        "rooms": room_ids,
+        "devices": device_ips,
+    }
+
+
+def describe_group(group, room_names=None, devices=None):
+    room_names = room_names or {}
+    devices = devices or {}
+    parts = []
+
+    rooms = group.get("rooms", []) if isinstance(group, dict) else []
+    group_devices = group.get("devices", []) if isinstance(group, dict) else []
+
+    if rooms:
+        labels = [room_names.get(room_id, f"Room {room_id}") for room_id in rooms]
+        parts.append(f"Rooms: {', '.join(labels)}")
+
+    if group_devices:
+        labels = [
+            devices.get(ip, {}).get("moduleName", ip)
+            for ip in group_devices
+        ]
+        parts.append(f"Devices: {', '.join(labels)}")
+
+    return " | ".join(parts) if parts else "Empty group"
+
+
+def is_generic_device_name(module_name, ip):
+    name = str(module_name or "").strip()
+    if not name:
+        return True
+
+    normalized_name = name.casefold()
+    generic_names = {
+        "unknown",
+        "wiz light",
+        "wiz bulb",
+        "light",
+        "bulb",
+        str(ip).casefold(),
+        f"device {ip}".casefold(),
+    }
+    return (
+        normalized_name in generic_names
+        or normalized_name.startswith("esp")
+        or normalized_name.startswith("wiz_")
+    )
+
+
+def is_default_discovered_name(record, ip):
+    if not isinstance(record, dict):
+        return True
+
+    module_name = str(record.get("moduleName") or "").strip()
+    result = record.get("info", {}).get("result", {}) if isinstance(record.get("info"), dict) else {}
+    discovered_name = str(result.get("moduleName") or "").strip()
+    return bool(discovered_name and module_name == discovered_name)
+
+
+def rename_generic_room_devices(data, room_id, room_name):
+    clean_room_name = str(room_name or "").strip()
+    if not clean_room_name:
+        return 0
+
+    devices = data.get("devices", {}) if isinstance(data, dict) else {}
+    used_names = {
+        str(record.get("moduleName", "")).strip()
+        for record in devices.values()
+        if isinstance(record, dict) and str(record.get("moduleName", "")).strip()
+    }
+    next_number = 1
+    renamed = 0
+
+    for ip, record in devices.items():
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("roomId", "Unknown")) != str(room_id):
+            continue
+        if not is_generic_device_name(record.get("moduleName"), ip) and not is_default_discovered_name(record, ip):
+            continue
+
+        while True:
+            candidate = f"{clean_room_name} {next_number}"
+            next_number += 1
+            if candidate not in used_names:
+                break
+
+        record["moduleName"] = candidate
+        used_names.add(candidate)
+        renamed += 1
+
+    return renamed
 
 
 def _empty_data():

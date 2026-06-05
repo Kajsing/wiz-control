@@ -142,9 +142,10 @@ py "C:\project\wiz-control\wiz_cli.py" shortcut "Desk Lamp On"
    - Click **Show Color Controls** on a device to reveal brightness, color temperature, and RGB sliders.
    - Use **Apply White** for tunable-white devices or **Apply Color** for RGB output. Preset buttons auto-fill the sliders and send the command.
 6. **Apply Room Scenes**: Select a scene from the dropdown in the room header, optionally adjust the speed, and click **Apply Scene** to broadcast the preset to every light in that room.
-7. **Save CLI Shortcuts**: Enter a base shortcut name beside a room or device, then select **Save On** or **Save Off**.
-8. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
-9. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
+7. **Build Groups**: Use the **Groups** panel to combine whole rooms and individual devices for CLI control.
+8. **Save CLI Shortcuts**: Enter a base shortcut name beside a room or device, then select **Save On** or **Save Off**.
+9. **Remove Devices**: Select **Remove** to clear an IP from the cache until the next discovery run.
+10. **Monitor Logs**: Click **Show Logs** / **Hide Logs** in the toolbar to toggle the status console (handy on smaller displays).
 
 ## Configuration
 
